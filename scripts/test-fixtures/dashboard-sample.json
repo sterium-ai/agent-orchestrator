@@ -1,0 +1,61 @@
+{
+  "updatedAt": "2026-09-16T18:00:00Z",
+  "repository": "example-org/example-repo",
+  "nextAction": "idle",
+  "supervisor": { "pid": 1234, "version": "1.9.0", "startedAt": "2026-09-16T08:00:00Z" },
+  "merges": [],
+  "issues": [],
+  "sessions": [],
+  "lessons": {
+    "activeCount": 6,
+    "newest": [
+      { "id": "L-006", "date": "2026-09-16", "source": "seed", "hits": 0 },
+      { "id": "L-005", "date": "2026-09-16", "source": "seed", "hits": 0 },
+      { "id": "L-004", "date": "2026-09-15", "source": "seed", "hits": 2 },
+      { "id": "L-002", "date": "2026-09-10", "source": "seed", "hits": 1 },
+      { "id": "L-001", "date": "2026-09-01", "source": "seed", "hits": 5 }
+    ]
+  },
+  "providers": {
+    "codex": {
+      "installed": true,
+      "ready": true,
+      "plan": "ChatGPT Plus",
+      "quotas": [
+        { "label": "5 h", "usedPercent": 25, "remaining": 75, "total": 100, "resetsAt": "2026-09-19T19:10:00Z", "source": "codex-cli" },
+        { "label": "Weekly", "usedPercent": 60, "remaining": 40, "total": 100, "resetsAt": "2026-09-22T00:00:00Z", "source": "codex-cli" }
+      ]
+    },
+    "copilot": {
+      "installed": true,
+      "ready": true,
+      "plan": "Copilot Pro",
+      "noPremiumRequests": true,
+      "quotas": [
+        { "label": "Monthly", "usedPercent": 10, "remaining": 90, "total": 100, "resetsAt": "2026-10-01T00:00:00Z", "source": "gh-copilot" }
+      ]
+    },
+    "claude": {
+      "installed": true,
+      "ready": true,
+      "plan": null,
+      "quotas": []
+    }
+  },
+  "usage": {
+    "codex": { "sessionsLast5h": 3, "sessionsLast24h": 9, "tokensLast5h": 12000, "tokensLast24h": 48000 },
+    "copilot": { "sessionsLast5h": 1, "sessionsLast24h": 4, "tokensLast5h": 2000, "tokensLast24h": 9000 },
+    "claude": { "sessionsLast5h": 2, "sessionsLast24h": 5, "tokensLast5h": 30000, "tokensLast24h": 120000 }
+  },
+  "legacyProvider": {
+    "installed": true,
+    "ready": true,
+    "plan": "Claude Pro",
+    "sessionsLast4h": 2,
+    "tokensLast4h": 15000
+  },
+  "legacyUsage": {
+    "sessionsLast4h": 2, "sessionsLast5h": 2, "sessionsLast24h": 6,
+    "tokensLast4h": 15000, "tokensLast5h": 15000, "tokensLast24h": 60000
+  }
+}

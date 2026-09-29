@@ -1,0 +1,12 @@
+*.tmp
+.DS_Store
+
+# Local agent supervisor state and credentials
+.agent-state/
+.agent-secrets/
+.env
+.env.*
+!.env.example
+
+# A local configuration (copy agent-orchestrator.example.json into the target repository instead)
+agent-orchestrator.json

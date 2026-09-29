@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent supervisor dashboard</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1c1f24; --muted:#6b7280; --line:#e5e7eb;
+          --ok:#1a7f4b; --warn:#b45309; --bad:#b91c1c; --info:#1d4ed8; --chip:#eef2ff; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#111418; --card:#1a1f26; --ink:#e6e8eb; --muted:#9aa3ad; --line:#2a313b; --chip:#232b3a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; padding:16px; }
+  h1 { font-size:18px; margin:0; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:0 0 8px; }
+  header { display:flex; flex-wrap:wrap; gap:12px 24px; align-items:baseline; margin-bottom:16px; }
+  .sub { color:var(--muted); }
+  .grid { display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); margin-bottom:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+  .big { font-size:22px; font-weight:600; }
+  .row { display:flex; justify-content:space-between; gap:8px; padding:4px 0; border-top:1px solid var(--line); }
+  .row:first-of-type { border-top:0; }
+  .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); } .info { color:var(--info); }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; vertical-align:middle; background:currentColor; }
+  .chip { display:inline-block; background:var(--chip); border-radius:999px; padding:1px 8px; font-size:12px; margin-right:4px; }
+  a { color:var(--info); text-decoration:none; } a:hover { text-decoration:underline; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:5px 6px; border-top:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:500; border-top:0; }
+  td.num, th.num { text-align:right; font-variant-numeric: tabular-nums; }
+  .muted { color:var(--muted); }
+  .banner { background:#fff4e5; color:#7c2d12; border:1px solid #fdba74; border-radius:10px; padding:10px 14px; margin-bottom:12px; }
+  @media (prefers-color-scheme: dark) { .banner { background:#3a2a12; color:#fde68a; border-color:#92400e; } }
+  .cols { display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  .col h3 { font-size:13px; margin:0 0 6px; }
+  .issue { padding:6px 8px; border:1px solid var(--line); border-radius:8px; margin-bottom:6px; background:var(--card); }
+  .issue .t { display:block; }
+  .small { font-size:12px; }
+  .quota-row { margin:6px 0; }
+  .bar { display:flex; height:8px; border-radius:4px; overflow:hidden; background:var(--line); margin:3px 0; }
+  .bar .used { background:var(--warn); }
+  .bar .remaining { background:var(--ok); }
+  footer { color:var(--muted); font-size:12px; margin-top:16px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Agent supervisor</h1>
+  <span class="sub" id="updated">loading…</span>
+  <span class="sub"><a id="repo" href="#" target="_blank">issues on GitHub</a></span>
+</header>
+<div id="banner" class="banner" hidden></div>
+
+<section class="grid">
+  <div class="card">
+    <h2>Right now</h2>
+    <div id="live-banner" class="banner" hidden></div>
+    <div class="row"><span>author</span><span id="live-author" class="muted">waiting</span></div>
+    <div class="row"><span>reviewer</span><span id="live-reviewer" class="muted">waiting</span></div>
+    <div class="row"><span>planner</span><span id="live-planner" class="muted">waiting</span></div>
+    <div class="row"><span>supervisor</span><span id="live-supervisor" class="muted">waiting</span></div>
+    <div class="big" id="next">—</div>
+    <div class="row"><span>Supervisor</span><span id="sup" class="muted">—</span></div>
+    <div class="row"><span>Merges in 24 h</span><span id="merges">—</span></div>
+  </div>
+  <div class="card" id="prov-claude"></div>
+  <div class="card" id="prov-codex"></div>
+  <div class="card" id="prov-copilot"></div>
+  <div class="card" id="lessons-card"></div>
+  <div class="card">
+    <h2>Provider status (official pages)</h2>
+    <div class="row"><span>Anthropic (Claude)</span><span id="st-anthropic" class="muted">checking…</span></div>
+    <div class="row"><span>OpenAI</span><span id="st-openai" class="muted">checking…</span></div>
+    <div class="row"><span>GitHub</span><span id="st-github" class="muted">checking…</span></div>
+    <div class="small muted" style="margin-top:6px">If a provider reports an incident here while agents fail, the cause is upstream.</div>
+    <div class="small muted" style="margin-top:6px">Three providers: Claude and Codex share the tasks; Copilot CLI is the third seat and steps in when the assigned provider is out of quota (or when an issue asks for it), so one exhausted allowance does not stall reviews.</div>
+  </div>
+</section>
+
+<section class="card" style="margin-bottom:16px">
+  <h2>Work queue</h2>
+  <div class="cols" id="cols"></div>
+</section>
+
+<section class="card">
+  <h2>Agent sessions (last 24 h)</h2>
+  <div style="overflow-x:auto">
+  <table id="sessions">
+    <thead><tr><th>When</th><th>Task</th><th>Provider</th><th>Mode</th><th class="num">Duration</th><th>Result</th><th class="num">Tokens</th><th class="num">Cache reads</th></tr></thead>
+    <tbody></tbody>
+  </table>
+  </div>
+<div class="small muted" style="margin-top:6px">"Tokens" are what the session sent and generated (input + output + cache writes). "Cache reads" (Claude only) is the context every turn re-reads from the cache: real usage, billed at a fraction, and the reason a 15-minute session can show millions. Codex reports its total when it finishes; Copilot writes it to its usage report.</div>
+</section>
+
+<footer>Refreshes every 30 s from <code>dashboard.json</code> in the state directory, which the supervisor writes every cycle. <span id="metrics">export: — s, — GitHub calls this cycle</span>. Exact credit figures: <a href="https://chatgpt.com/codex/settings/usage" target="_blank">Codex usage</a> · <a href="https://claude.ai/settings/usage" target="_blank">Claude usage</a>.</footer>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const fmtTime = (iso) => iso ? new Date(iso).toLocaleString(undefined, { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }) : '—';
+const fmtAgo = (iso) => { if (!iso) return '—'; const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 2880 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`; };
+const fmtDur = (s) => s == null ? '—' : s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`;
+const fmtTok = (n) => n == null ? '—' : n.toLocaleString('en-US');
+const stateLabel = { ready: 'Queued', blocked: 'Blocked (waiting on another task)', 'in-progress': 'In progress', review: 'In review', failed: 'Failed — needs attention', objective: 'Objective to plan', 'objective-planned': 'Objective in progress' };
+const order = ['objective', 'objective-planned', 'ready', 'blocked', 'in-progress', 'review', 'failed'];
+
+const USAGE_LINKS = { claude: 'https://claude.ai/settings/usage', codex: 'https://chatgpt.com/codex/settings/usage', copilot: 'https://github.com/settings/copilot/features' };
+let dashboardData = null;
+let liveData = null;
+let dashboardStale = false;
+let liveStale = false;
+
+function updateBanner() {
+  $('banner').hidden = !dashboardStale;
+  if (dashboardStale) {
+    $('banner').textContent = `The supervisor has not written anything since ${fmtTime(dashboardData.updatedAt)}. Usually the host is asleep or the scheduled task is stopped; this is not an agent problem.`;
+  }
+  $('live-banner').hidden = !liveStale;
+  if (liveStale) $('live-banner').textContent = `The live state is stale since ${fmtTime(liveData.updatedAt)}; the agent may have finished or the task may be stopped.`;
+}
+
+function renderSessions(d) {
+  const liveTag = liveData && liveData.tag;
+  const tb = $('sessions').querySelector('tbody');
+  tb.innerHTML = (d.sessions || []).map(s => {
+    const running = s.outcome === 'running' || (liveTag && s.tag === liveTag);
+    const cls = running ? 'info' : s.outcome === 'ok' ? 'ok' : s.outcome === 'quota' ? 'warn' : 'bad';
+    const label = running ? 'running' : { ok: 'ok', quota: 'out of quota (not counted)', timeout: 'timed out' }[s.outcome] || s.outcome;
+    return `<tr><td>${fmtTime(s.startedAt)}</td><td>${escapeHtml(s.tag)}</td><td>${s.provider}</td><td>${s.mode === 'edit' ? 'writes' : 'reviews/plans'}</td><td class="num">${fmtDur(s.seconds)}</td><td class="${cls}">${label}</td><td class="num">${s.tokens == null ? '—' : fmtTok(s.tokens - (s.tokensCacheRead || 0))}</td><td class="num muted">${s.tokensCacheRead != null ? fmtTok(s.tokensCacheRead) : '—'}</td></tr>`;
+  }).join('') || '<tr><td colspan="8" class="muted">No sessions in the last 24 h.</td></tr>';
+}
+
+function renderLive(live) {
+  // A revision is the author fixing its own PR after review feedback, so it belongs on the author row.
+  const currentRole = live && (live.role === 'reviser' ? 'author' : live.role);
+  const age = live && live.updatedAt ? Date.now() - new Date(live.updatedAt).getTime() : Infinity;
+  liveStale = !!live && live.step !== 'idle' && age > 90000;
+  const fallback = dashboardData && dashboardData.nextAction === 'idle' ? 'Idle…' : (dashboardData && dashboardData.nextAction) || 'Idle…';
+  if (!live || liveStale) {
+    $('next').textContent = fallback;
+  } else {
+    const step = String(live.step || '').toLowerCase();
+    const verbs = { author: 'implementing', reviewer: 'reviewing', planner: 'planning', supervisor: 'supervising' };
+    let verb = verbs[currentRole] || 'working';
+    if (step === 'idle') verb = 'Idle…';
+    else if (step === 'revision') verb = 'revising';
+    else if (step.includes('review')) verb = 'reviewing';
+    else if (step.includes('plan')) verb = 'planning';
+    else if (step.includes('implement')) verb = 'implementing';
+    else if (currentRole === 'supervisor') verb = 'supervising';
+    $('next').textContent = verb === 'Idle…' ? verb : (live.issue != null ? `${verb} #${live.issue}` : verb);
+  }
+  for (const role of ['author', 'reviewer', 'planner', 'supervisor']) {
+    const el = $(`live-${role}`);
+    if (!live || currentRole !== role) {
+      el.textContent = 'waiting';
+      el.className = 'muted';
+      continue;
+    }
+    const repo = dashboardData && dashboardData.repository;
+    const issue = live.issue != null && repo ? `<a href="https://github.com/${escapeHtml(repo)}/issues/${live.issue}" target="_blank">#${live.issue}</a>` : '—';
+    const action = live.lastAction && live.lastAction.summary ? escapeHtml(live.lastAction.summary) : 'waiting';
+    el.innerHTML = `${escapeHtml(live.provider || '—')} · ${issue} · ${fmtDur(live.elapsedSeconds)} · ${action}`;
+    el.className = '';
+  }
+  updateBanner();
+}
+
+// q.usedPercent is always a percentage; q.remaining/q.total are a count only when the provider
+// meters in units (Copilot: 139 of 200 chat interactions), so the "left" text must be built from
+// the percentage, never from q.remaining (that once printed "139 % left" and "2000 % left").
+// A window whose reset time has already passed is shown as reset: the reading is the last one the
+// provider gave (Codex only writes rate limits into a transcript when a session runs), so the
+// used share is unknown but starts again at 0 until its next session refreshes it.
+function renderQuotaBar(q, extra) {
+  if (!q) return '';
+  const now = Date.now();
+  const resetMs = q.resetsAt ? new Date(q.resetsAt).getTime() : NaN;
+  const resetPassed = Number.isFinite(resetMs) && resetMs < now;
+  const usedPct = resetPassed ? 0 : Math.min(100, Math.max(0, q.usedPercent != null ? Number(q.usedPercent) : 0));
+  const restPct = Math.round((100 - usedPct) * 10) / 10;
+  const isCount = q.total != null && q.total !== 100 && q.remaining != null;
+  const label = q.label ? `<div class="small">${escapeHtml(q.label)}${extra ? ` <span class="muted">· ${extra}</span>` : ''}</div>` : '';
+  let text;
+  if (resetPassed) {
+    text = `window reset on ${fmtTime(q.resetsAt)} · last reading ${q.readAt ? fmtTime(q.readAt) : 'earlier'}; refreshed by its next session`;
+  } else if (isCount) {
+    text = `${fmtTok(q.total - q.remaining)} of ${fmtTok(q.total)} used (${usedPct} %) · ${fmtTok(q.remaining)} left · resets ${fmtTime(q.resetsAt)}`;
+  } else {
+    text = `${usedPct} % used · ${restPct} % left · resets ${fmtTime(q.resetsAt)}`;
+  }
+  return `<div class="quota-row">${label}<div class="bar"><div class="used" style="width:${usedPct}%"></div><div class="remaining" style="width:${100 - usedPct}%"></div></div><div class="small muted">${text}</div></div>`;
+}
+
+// What our own sessions spent inside a window, and a plain-rule estimate of what is left: if N
+// sessions / T tokens cost U % of the window, the remaining (100 - U) % buys about the same
+// rate. Only for the 5 h window (the only one we count sessions for) and only when the
+// provider's own reading says the window is live and something was spent in it.
+function spendLine(q, u, hasCacheSplit) {
+  if (!u) return '';
+  const tok = u.tokensLast5h || 0, cr = u.cacheReadLast5h || 0, n = u.sessionsLast5h || 0;
+  const spent = `${n} ${n === 1 ? 'session' : 'sessions'} · ${fmtTok(tok - cr)} tokens${hasCacheSplit && cr ? ` (+ ${fmtTok(cr)} cache reads)` : ''}`;
+  const live = q && q.usedPercent > 0 && q.resetsAt && new Date(q.resetsAt).getTime() > Date.now() && n > 0;
+  const est = live ? ` · <b>≈ ${Math.floor(n * (100 - q.usedPercent) / q.usedPercent)} sessions, ≈ ${fmtTok(Math.round((tok - cr) * (100 - q.usedPercent) / q.usedPercent))} tokens left</b> at the pace of these 5 h` : '';
+  return `<div class="small muted" style="margin-top:2px">Spent by the pipeline in 5 h: ${spent}${est}</div>`;
+}
+
+// A reading older than this is history, not a live figure: Codex only writes its rate limits
+// into a transcript while that login is working, so a login that has not run since yesterday
+// keeps showing yesterday's bar. Saying so on the bar is the difference between "the reserve is
+// untouched" and "nobody has asked the reserve since yesterday".
+const STALE_READING_MS = 6 * 3600000;
+
+// Logins of one provider that resolve to the SAME account, by the fingerprint the supervisor
+// publishes (a hash of the provider's account id; the id itself never leaves the PC). Returns
+// [[fingerprint, [labels...]], ...] for the groups with more than one login in them -- normally
+// empty, and when it is not, the "reserve" is not a reserve at all.
+function groupSharedAccounts(accounts) {
+  const byId = new Map();
+  for (const a of accounts || []) {
+    if (!a || !a.accountId) continue;
+    if (!byId.has(a.accountId)) byId.set(a.accountId, []);
+    byId.get(a.accountId).push(a.label);
+  }
+  return [...byId.entries()].filter(([, labels]) => labels.length > 1);
+}
+
+// For each account fingerprint, the label of the login whose reading is newest. When two logins
+// share one account they share one quota window, so the older block's bar is not a second budget
+// -- it is a stale view of the same one, and the bar says which block to believe.
+function freshestReadingByAccount(accounts) {
+  const best = new Map();
+  for (const a of accounts || []) {
+    if (!a || !a.accountId) continue;
+    for (const q of a.quotas || []) {
+      const t = q && q.readAt ? new Date(q.readAt).getTime() : NaN;
+      if (!Number.isFinite(t)) continue;
+      const cur = best.get(a.accountId);
+      if (!cur || t > cur.t) best.set(a.accountId, { t, label: a.label });
+    }
+  }
+  return best;
+}
+
+// The "· ..." note printed next to one login's quota label: how old the reading is, and,
+// when another login of the same account has a newer one, which block carries the real figure.
+function readingNote(q, account, freshest) {
+  const parts = [];
+  if (q && q.readAt) {
+    const age = Date.now() - new Date(q.readAt).getTime();
+    parts.push(age > STALE_READING_MS ? `read ${fmtAgo(q.readAt)}, not live` : `read ${fmtAgo(q.readAt)}`);
+  }
+  const fresh = account && account.accountId ? freshest.get(account.accountId) : null;
+  if (fresh && fresh.label !== account.label) parts.push(`same account as <b>${escapeHtml(fresh.label)}</b>: its figure is the live one`);
+  return parts.join(' \u00b7 ');
+}
+
+function provider(name, p, u) {
+  const el = $(`prov-${name}`);
+  if (!p) { el.innerHTML = `<h2>${name}</h2><div class="muted">no data</div>`; return; }
+  const state = p.installed === false ? `<span class="muted"><span class="dot"></span>not installed on this host</span>` :
+    p.ready ? `<span class="ok"><span class="dot"></span>available</span>` :
+    `<span class="warn"><span class="dot"></span>paused until ${fmtTime(p.cooldownUntil)}</span>`;
+  // A provider notice is only news while it still applies: shown while the provider is paused,
+  // or for 6 h after it was recorded. A "hit your session limit" from three days ago is not.
+  const noticeAge = p.recordedAt ? Date.now() - new Date(p.recordedAt).getTime() : Infinity;
+  const showNotice = p.lastMessage && (p.ready === false || noticeAge < 6 * 3600000);
+  const msg = showNotice ? `<div class="small muted" style="margin-top:6px">Last notice (${fmtAgo(p.recordedAt)}): ${escapeHtml(p.lastMessage)}</div>` : '';
+  // Several logins of one provider (Codex reserve accounts): one block per login, in the
+  // order the supervisor uses them. The provider-level plan row is the primary login's, so
+  // it says so when there is more than one -- they can be on different plans.
+  const accounts = (p.accounts && p.accounts.length > 1) ? p.accounts : [];
+  const planLine = p.plan ? `<div class="row"><span>Plan${accounts.length ? ' (primary)' : ''}</span><span class="chip">${escapeHtml(planName(p.plan))}</span></div>` : '';
+  const tokNote = name === 'claude'
+    ? '<div class="small muted" style="margin-top:6px">Bars: Anthropic\'s official % (the plan\'s 5 h and 7 d windows; the token budget is not published, so "left" is an estimate at the current pace). Tokens: real, from Claude Code\'s local transcripts; "cache reads" are the context every turn re-reads, which is why they are huge. Official figure: <a href="https://claude.ai/settings/usage" target="_blank">claude.ai/settings/usage</a>.</div>'
+    : name === 'codex'
+    ? '<div class="small muted" style="margin-top:6px">Bars: the official % OpenAI writes into each Codex session transcript (refreshed only when that login works). Tokens: what Codex reports when it finishes. Official figure: <a href="https://chatgpt.com/codex/settings/usage" target="_blank">chatgpt.com/codex/settings/usage</a>.</div>'
+    : name === 'copilot'
+    ? '<div class="small muted" style="margin-top:6px">Third provider (GitHub Copilot CLI): steps in when Claude or Codex run out of quota. Bars: GitHub\'s official monthly quota, in units (interactions), not %. Tokens and "premium requests": the usage report the CLI writes per session. Official figure: <a href="https://github.com/settings/copilot/features" target="_blank">github.com/settings/copilot</a>.</div>'
+    : '';
+  const quotas = p.quotas || [];
+  // One block per login: its own state, its own plan, its own account fingerprint and its own
+  // bars, each labelled with how old the reading behind it is. The provider-level bars would
+  // just repeat the first login's, so they are dropped when this block is shown.
+  const freshest = freshestReadingByAccount(accounts);
+  const sharedWarn = groupSharedAccounts(accounts).map(([id, labels]) =>
+    `<div class="small warn" style="margin-top:6px"><b>Note:</b> ${labels.map(escapeHtml).join(' and ')} are the same account (fingerprint <span class="chip">#${escapeHtml(id)}</span>): they share one limit, so the reserve adds no quota. To make them two, log one of them in with a different account (<code>$env:CODEX_HOME=&lt;folder&gt;; codex login</code>).</div>`).join('');
+  const accountsHtml = accounts.length
+    ? `<div class="small" style="margin-top:8px">Logins, in order of use (when one runs out, the next takes over the same task):</div>${sharedWarn}` +
+      accounts.map(a => {
+        const st = a.ready ? '<span class="ok"><span class="dot"></span>available</span>' : `<span class="warn"><span class="dot"></span>paused until ${fmtTime(a.cooldownUntil)}</span>`;
+        const plan = a.plan ? ` · plan <span class="chip">${escapeHtml(planName(a.plan))}</span>` : ' · <span class="muted">plan unknown</span>';
+        const acct = a.accountId ? ` · <span class="muted">account #${escapeHtml(a.accountId)}</span>` : '';
+        const bars = (a.quotas || []).length
+          ? a.quotas.map(q => renderQuotaBar(q, readingNote(q, a, freshest))).join('')
+          : `<div class="small muted">no official figure yet (appears after its first session)</div>`;
+        return `<div style="margin:6px 0 0 8px;padding-left:8px;border-left:2px solid var(--line,#ddd)"><div class="small"><b>${escapeHtml(a.label)}</b> · ${st}${plan}${acct}</div>${bars}</div>`;
+      }).join('')
+    : '';
+  const quotasHtml = accountsHtml ? '' : (quotas.length === 0 || !p.plan)
+    ? `<div class="small muted" style="margin-top:6px">no official figure · <a href="${USAGE_LINKS[name] || '#'}" target="_blank">see usage</a></div>`
+    : quotas.map(renderQuotaBar).join('');
+  const premiumNote = p.noPremiumRequests ? `<div class="small muted" style="margin-top:6px">This plan includes no premium requests.</div>` : '';
+  const hasCacheSplit = name === 'claude';
+  const q5 = quotas.find(q => /^5 h$/.test(q.label || '')) || accounts.flatMap(a => a.quotas || []).find(q => /^5 h$/.test(q.label || ''));
+  const sessionsLine = spendLine(q5, u, hasCacheSplit);
+  const t24 = u ? (u.tokensLast24h || 0) - (u.cacheReadLast24h || 0) : null;
+  const tokensLine = u ? `<div class="small muted">Last 24 h: ${u.sessionsLast24h} sessions · ${fmtTok(t24)} tokens${hasCacheSplit && u.cacheReadLast24h ? ` (+ ${fmtTok(u.cacheReadLast24h)} cache reads)` : ''}</div>` : '';
+  el.innerHTML = `<h2>${name}</h2><div class="big">${state}</div>${planLine}${quotasHtml}${accountsHtml}${premiumNote}${sessionsLine}${tokensLine}${msg}${tokNote}`;
+}
+// Provider plan ids as the owner knows them; unknown ids are shown as they come.
+const PLAN_NAMES = { free: 'Free', plus: 'Plus', pro: 'Pro', prolite: 'Pro Lite', team: 'Team', max: 'Max', individual: 'Individual' };
+function planName(id) { return PLAN_NAMES[String(id || '').toLowerCase()] || id; }
+function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+// asOf is the dashboard's own updatedAt (not the browser clock): "within the last 24h" means
+// relative to the snapshot the supervisor wrote, so the marking is stable across a page left
+// open a while. Recent entries get the same warn+dot marker the page already uses to flag a
+// time-based state elsewhere (a provider's cooldown/pause).
+function renderLessons(lessons, asOf) {
+  const el = $('lessons-card');
+  const count = lessons && lessons.activeCount != null ? lessons.activeCount : 0;
+  const newest = (lessons && lessons.newest) || [];
+  const asOfMs = asOf ? new Date(asOf).getTime() : Date.now();
+  const rows = newest.length
+    ? newest.map(l => {
+        const recent = (asOfMs - new Date(l.date).getTime()) < 24 * 60 * 60 * 1000;
+        const mark = recent ? '<span class="warn"><span class="dot"></span>NEW</span> ' : '';
+        return `<div class="row"><span>${mark}${escapeHtml(l.id)} · ${escapeHtml(l.date)} · ${escapeHtml(l.source || '?')}</span><span class="small muted">${l.hits != null ? l.hits : 0} hit(s)</span></div>`;
+      }).join('')
+    : '<div class="muted">No active lessons.</div>';
+  el.innerHTML = `<h2>Lessons</h2><div class="big">${count}</div>${rows}`;
+}
+
+function render(d) {
+  dashboardData = d;
+  const how = d.meta && d.meta.trigger === 'heartbeat' ? ' · exported by the heartbeat during a long session; the queue is from the start of the cycle' + (d.queueFetchedAt ? ` (${fmtAgo(d.queueFetchedAt)})` : '') : '';
+  $('updated').textContent = `supervisor data from ${fmtTime(d.updatedAt)} (${fmtAgo(d.updatedAt)})${how}`;
+  const meta = d.meta || {};
+  $('metrics').textContent = `export: ${meta.exportMs != null ? (meta.exportMs / 1000).toFixed(1) : '—'} s, ${meta.githubCalls != null ? meta.githubCalls : '—'} GitHub calls this cycle`;
+  $('repo').href = `https://github.com/${d.repository}/issues`;
+  dashboardStale = (Date.now() - new Date(d.updatedAt)) > 6 * 60000;
+  const stale = dashboardStale;
+  if (stale) $('banner').textContent = `The supervisor has not written anything since ${fmtTime(d.updatedAt)}. Usually the host is asleep or the scheduled task is stopped; this is not an agent problem.`;
+  $('next').textContent = d.nextAction === 'idle' ? 'Idle…' : d.nextAction;
+  $('sup').textContent = d.supervisor ? `pid ${d.supervisor.pid} · version ${d.supervisor.version || '?'} · since ${fmtTime(d.supervisor.startedAt)}` : '—';
+  $('merges').textContent = (d.merges || []).length ? d.merges.map(m => `#${m.issue}`).join(', ') : 'none';
+  provider('claude', d.providers && d.providers.claude, d.usage && d.usage.claude);
+  provider('codex', d.providers && d.providers.codex, d.usage && d.usage.codex);
+  provider('copilot', d.providers && d.providers.copilot, d.usage && d.usage.copilot);
+  renderLessons(d.lessons, d.updatedAt);
+
+  const groups = {};
+  for (const i of d.issues || []) (groups[i.state] ||= []).push(i);
+  $('cols').innerHTML = order.filter(k => groups[k] && groups[k].length).map(k => `<div class="col"><h3>${stateLabel[k]} <span class="chip">${groups[k].length}</span></h3>` +
+    groups[k].map(i => `<div class="issue"><a class="t" href="${i.url}" target="_blank">#${i.number} ${escapeHtml(i.title)}</a>
+      <span class="small muted">${i.provider ? `written by ${i.provider}, reviewed by ${i.reviewer || '?'}` : ''}${i.objective ? ` · objective #${i.objective}` : ''}${i.reviewRounds ? ` · ${i.reviewRounds} review round(s)` : ''}</span></div>`).join('') + '</div>').join('') || '<div class="muted">Nothing queued.</div>';
+
+  renderSessions(d);
+  updateBanner();
+  if (liveData) renderLive(liveData);
+}
+
+async function load() {
+  try {
+    const r = await fetch('/api/dashboard.json', { cache: 'no-store' });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    render(await r.json());
+  } catch (e) {
+    $('updated').textContent = `could not read dashboard.json (${e.message}); the supervisor has not written it yet, or the server is not running in the repository clone`;
+  }
+}
+async function loadLive() {
+  try {
+    const r = await fetch('/api/live.json', { cache: 'no-store' });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    liveData = await r.json();
+  } catch (e) {
+    liveData = null;
+  }
+  renderLive(liveData);
+}
+async function statusPage(id, url, link) {
+  const el = $(id);
+  try {
+    const r = await fetch(url, { cache: 'no-store' });
+    const j = await r.json();
+    const ind = (j.status && j.status.indicator) || 'unknown';
+    const cls = ind === 'none' ? 'ok' : ind === 'minor' ? 'warn' : ind === 'unknown' ? 'muted' : 'bad';
+    el.innerHTML = `<a class="${cls}" href="${link}" target="_blank"><span class="dot"></span>${escapeHtml((j.status && j.status.description) || ind)}</a>`;
+  } catch (e) {
+    el.innerHTML = `<a class="muted" href="${link}" target="_blank">not reachable from here — open</a>`;
+  }
+}
+function statuses() {
+  // status.anthropic.com redirected to status.claude.com (the current official Claude status
+  // page) without CORS headers on the redirect target, so a browser fetch() to the old domain
+  // always failed with "Failed to fetch" even though curl/Invoke-WebRequest worked fine
+  // server-side. status.claude.com itself sends Access-Control-Allow-Origin: * and works.
+  statusPage('st-anthropic', 'https://status.claude.com/api/v2/status.json', 'https://status.claude.com/');
+  statusPage('st-openai', 'https://status.openai.com/api/v2/status.json', 'https://status.openai.com/');
+  statusPage('st-github', 'https://www.githubstatus.com/api/v2/status.json', 'https://www.githubstatus.com/');
+}
+load(); loadLive(); statuses();
+setInterval(load, 30000);
+setInterval(loadLive, 15000);
+setInterval(statuses, 5 * 60000);
+</script>
+</body>
+</html>

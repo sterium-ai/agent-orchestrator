@@ -1,0 +1,68 @@
+{
+  "repository": "your-org/your-repo",
+  "stateDirectory": ".agent-state",
+  "pollSeconds": 120,
+  "plannerProvider": "claude",
+
+  "testGate": {
+    "command": "npm test",
+    "timeoutSeconds": 600,
+    "whenChanged": "^(src|test)/"
+  },
+  "prePushCommand": "",
+
+  "acceptance": {
+    "timeoutSeconds": 300,
+    "trustedAuthors": ["your-github-login"]
+  },
+
+  "models": {
+    "claudeExpert": "claude-fable-5-1",
+    "codexExpert": "gpt-6-astra",
+    "copilot": "auto"
+  },
+
+  "agents": {
+    "shellCommands": ["npm", "node", "python", "powershell"],
+    "extraDirectories": [],
+    "sandboxWritableDirectories": []
+  },
+
+  "limits": {
+    "maxRevisions": 6,
+    "maxRepairs": 2,
+    "maxTotalRevisions": 12,
+    "swapAfterMinutes": 30
+  },
+  "timeouts": {
+    "plannerMinutes": 25,
+    "implementMinutes": 90,
+    "reviewMinutes": 30
+  },
+  "expertRecovery": {
+    "enabled": true,
+    "timeoutMinutes": 45
+  },
+
+  "ownership": {
+    "testDirectory": "test",
+    "testFilter": "*.test.js",
+    "pathAliases": [],
+    "companions": [
+      { "when": "^src/db/migrations/", "add": "test/fixtures/" }
+    ],
+    "budgetsFile": "docs/architecture/core-budgets.json",
+    "decisionsDirectory": "docs/decisions/",
+    "protectedPaths": ["vendor/"],
+    "generatedFiles": ["\\.snap$"]
+  },
+
+  "worktree": {
+    "excludePaths": []
+  },
+  "orphanSweep": {
+    "processNames": [],
+    "commandLineContains": ""
+  },
+  "lessonsFile": "docs/agent-prompts/lessons.md"
+}
