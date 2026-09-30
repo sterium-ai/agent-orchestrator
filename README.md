@@ -3,6 +3,18 @@
 **An unattended, multi-provider delivery pipeline for a GitHub repository: objectives in, reviewed
 and merged pull requests out.**
 
+## In plain words
+
+Software moves slowly when every small change needs a person to write it, check it and file it
+away. With this tool, someone describes what they want in an ordinary sentence, and AI
+assistants from three different companies do the rest: one plans the work, one builds each
+piece, and a different one checks it before anything is accepted. It runs on its own around
+the clock, writes down every decision where anyone can read it, and asks a person only when a
+real decision is needed. It is for small teams and solo builders who want steady, reviewed
+progress on a codebase without supervising every step.
+
+## Overview
+
 You file an `objective` issue in plain language. A PowerShell supervisor, running on a Windows
 host, has a planner agent split it into small task issues with an explicit contract (owned paths,
 acceptance commands, dependencies); gives each task to an author agent in its own git worktree;
@@ -20,8 +32,9 @@ It was built while delivering a real project; see
 [How it works](#how-it-works) · [Key features](#key-features) · [Quick start](#quick-start) ·
 [Configuration](#configuration) · [Security model](#security-model) · [Tests](#tests) ·
 [Under the hood](#under-the-hood) · [Why it's useful](#why-its-useful) ·
-[Curiosities](#curiosities) · [How it compares](#how-it-compares) ·
-[Limitations and roadmap](#limitations-and-roadmap)
+[Notes from production](#notes-from-production) · [How it compares](#how-it-compares) ·
+[Limitations and roadmap](#limitations-and-roadmap) · [Documentation](#documentation) ·
+[Repository layout](#repository-layout)
 
 ## How it works
 
@@ -296,8 +309,8 @@ with code 77. `Register-QuotaBlock` records a cooldown per login in `providers.j
 once per reset time, and rolls back the round. `Get-ProviderAccounts` treats every `CODEX_HOME`
 under `codexAccountsDir` as a reserve login used in order; `Get-EffectiveAuthor` hands a task to
 another provider after `swapAfterMinutes`, and `Sync-QuotaCooldowns` rests Copilot when its quota
-API says the month is spent. **Why.** A subscription wall used to consume review rounds and fail
-tasks that nobody had actually attempted.
+API says the month is spent. **Why.** Without this, a subscription wall consumes review rounds and fails
+tasks nobody has actually attempted.
 
 ### Lessons loop
 
@@ -323,7 +336,7 @@ ones; a rule every prompt carries is cheaper than a review round that rediscover
 - **Small, reviewable changes.** Owned paths and bounded tasks keep diffs focused, and the
   repair ladder fixes the task instead of relaunching the same author against the same wall.
 
-## Curiosities
+## Notes from production
 
 - **A test fixture paused a provider for 16 hours.** A task body quoted provider limit messages
   as test fixtures ("resets 5:30pm"). Codex echoes the whole prompt into its log, so the quota
@@ -369,27 +382,40 @@ walls. The pieces are complementary: any of those agents could, in principle, si
   conflict-aware scheduler for owned paths.
 - **Host execution is trust-based.** The allowlist limits who can define commands; a real
   sandbox (container per acceptance run) would limit what they can do.
-- **Few mechanical lessons.** Two of the eight seed lessons carry a machine check; the rest are
-  prompt rules. Turning more recurring findings into checks is the cheapest quality lever left.
+- **Few mechanical lessons.** Two of the eight shipped lessons carry a machine check; the rest
+  are prompt rules. Turning more recurring findings into checks is the cheapest quality lever left.
 - **Heuristic similarity.** Finding matching is word overlap, which misses paraphrases and can
   merge unrelated findings.
-- **Size.** `agent-supervisor.ps1` is 4,653 lines. The pure parts already live in
+- **Size.** `agent-supervisor.ps1` is 4,640 lines. The pure parts already live in
   `scripts/lib/`; splitting the rest the same way would make it easier to extend.
+
+## Documentation
+
+The full index, grouped for newcomers, operators and reviewers, is in
+[docs/README.md](docs/README.md). The most useful entry points:
+
+- [docs/HOW_TO_GIVE_OBJECTIVES.md](docs/HOW_TO_GIVE_OBJECTIVES.md): how to ask for work (no code required).
+- [docs/AGENT_SUPERVISOR.md](docs/AGENT_SUPERVISOR.md): the complete behaviour reference.
+- [docs/decisions/](docs/decisions/README.md): architecture decision records.
+- [docs/case-study.md](docs/case-study.md): what the pipeline delivered on a real project.
 
 ## Repository layout
 
 ```text
-scripts/agent-supervisor.ps1      the supervisor (loop, planning, implementation, review, recovery, dashboard export)
-scripts/run-agent.ps1             one provider session with a fixed tool policy and quota detection
-scripts/lessons.ps1               lessons reader/writer/matcher
-scripts/lib/                      pure helpers: ownership rules, preflight, trusted authors, revision flow, expert recovery
-scripts/install-supervisor-task.ps1, scripts/serve-dashboard.ps1
-scripts/test-*.ps1, scripts/tests/, scripts/test-dashboard-bars.js, scripts/test-fixtures/
-docs/agent-prompts/               planner, implementer, reviewer, repairer and expert prompts; shared rules; seed lessons
-docs/AGENT_SUPERVISOR.md          full behaviour reference
-docs/decisions/                   decision records about the orchestrator (index in README.md there)
-docs/case-study.md                what the pipeline delivered, measured from git history
-agent-orchestrator.example.json   configuration template
+scripts/agent-supervisor.ps1          the supervisor (loop, planning, implementation, review, recovery, dashboard export)
+scripts/run-agent.ps1                 one provider session with a fixed tool policy and quota detection
+scripts/lessons.ps1                   lessons reader/writer/matcher
+scripts/lib/                          pure helpers: ownership rules, preflight, trusted authors, revision flow, expert recovery
+scripts/install-supervisor-task.ps1   registers the always-on Windows scheduled task
+scripts/serve-dashboard.ps1           loopback-only dashboard server
+scripts/test-*.ps1, scripts/tests/    PowerShell test suites (scripts/test-fixtures/ holds their sample data)
+scripts/test-dashboard-bars.js        JavaScript test for the dashboard page
+docs/README.md                        documentation index
+docs/agent-prompts/                   planner, implementer, reviewer, repairer and expert prompts; shared rules; shipped lessons
+docs/dashboard/index.html             the owner dashboard page
+docs/decisions/                       decision records about the orchestrator
+docs/examples/                        template AGENTS.md for a target repository
+agent-orchestrator.example.json       configuration template
 ```
 
 ## License

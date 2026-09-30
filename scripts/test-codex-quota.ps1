@@ -10,10 +10,6 @@ is never an option.
 
 Prints one PASS/FAIL line per check, then a summary line, and exits non-zero if any check
 failed.
-
-This file must stay UTF-8 WITH a BOM: it compares window labels that contain accented text
-("7 dias" with an accent), and Windows PowerShell 5.1 decodes a BOM-less .ps1 as Windows-1252,
-which turned that literal into mojibake and failed the check against a correctly built label.
 #>
 $ErrorActionPreference = "Continue"
 $script:failCount = 0

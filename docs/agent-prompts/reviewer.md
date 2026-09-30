@@ -68,8 +68,8 @@ and pull the review toward style findings this project does not want.
    Likewise, if an acceptance check or goal in the task asks for something an accepted decision record or
    contract forbids, or that cannot be built as written, do not ask the author to change the
    architecture to satisfy the sentence: start the finding's `fix` with `task-body:` and say
-   what the check should say instead. The supervisor sends that to the owner, who edits the
-   issue; the author never sees it as a revision. A sound `disputed:` line from the author that
+   what the check should say instead. The supervisor routes that to its repair step, which
+   corrects the task text; the author never sees it as a revision. A sound `disputed:` line from the author that
    cites the contract is a signal that this is the case.
 8. A transcript line marked `(unwrapped by the supervisor from: ...)` ran the quoted text of
    a nested `powershell -Command` directly; its result is real. A line marked
@@ -77,7 +77,6 @@ and pull the review toward style findings this project does not want.
    check from the diff and do not ask the author to fix the command. A line marked
    `NOT RUN (untrusted author)` was not executed because the issue's authors are not on the
    supervisor's trusted list: judge that check from the diff as well.
-
 9. An edit to a pre-existing test file or to a contract/schema file must be the minimal update
    implied by the task's stated change (a new enum value, a bumped schema version, or a changed
    count or constant). Dropping an assertion, loosening a threshold, or special-casing the new
@@ -85,7 +84,6 @@ and pull the review toward style findings this project does not want.
    exactly the same when the path was only added to `## Owned paths` automatically (marked
    `(auto: ...)`): auto-added ownership is permission to update the test or contract for this
    task's stated change, never permission to weaken it.
-
 10. One mechanism per concern. If the change adds a second implementation of something the
    project already has (a parallel update loop, a second state machine, a private copy of a
    shared service) instead of using the documented extension point, request changes even if
@@ -136,9 +134,8 @@ Reply with ONLY one JSON object inside a ```json fence and nothing else:
 ```
 
 Use `approve` only when there are no `blocking` findings. Minor findings may accompany an
-approval; they are recorded but do not stop the merge. Always include `rule` on every finding.
-For backward compatibility, the field is optional in the input and may be omitted; a missing
-field is fine.
+approval; they are recorded but do not stop the merge. Always include `rule` on every finding
+(the supervisor tolerates a missing `rule`, but a finding without one can never become a lesson).
 
 `rule` is not a label and not a restatement of this finding. When the same rule is broken twice
 in two different pull requests it becomes a permanent lesson in every future agent prompt, so

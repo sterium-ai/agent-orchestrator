@@ -213,7 +213,7 @@ function spendLine(q, u, hasCacheSplit) {
 const STALE_READING_MS = 6 * 3600000;
 
 // Logins of one provider that resolve to the SAME account, by the fingerprint the supervisor
-// publishes (a hash of the provider's account id; the id itself never leaves the PC). Returns
+// publishes (a hash of the provider's account id; the id itself never leaves the host). Returns
 // [[fingerprint, [labels...]], ...] for the groups with more than one login in them -- normally
 // empty, and when it is not, the "reserve" is not a reserve at all.
 function groupSharedAccounts(accounts) {

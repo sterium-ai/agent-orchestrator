@@ -193,10 +193,10 @@ try {
     Test-Result "Get-AcceptanceCommands: a disabled (#) line is skipped and the rest kept" ($extracted.Count -eq 1 -and $extracted[0] -eq 'powershell -NoProfile -File scripts\a.ps1')
 
     # Failure identity: the same wall must hash alike across commits, times and durations
-    # (#71 failed identically six times while the commit kept changing); a different failure
-    # must not.
-    $wallA = "Acceptance command failed (exit 1): ``node scripts\start-server.js``  (exit 1, 2.3s)`nError: listen EADDRINUSE: address already in use :::8080 at 2026-09-16T12:01:05.123+02:00 commit a1b2c3d4e5f"
-    $wallB = "Acceptance command failed (exit 1): ``node scripts\start-server.js``  (exit 1, 41.9s)`nError: listen EADDRINUSE: address already in use :::8080 at 2026-09-16T13:47:59.001+02:00 commit ffeeddccbba"
+    # (an author can commit something cosmetic every round while the failure stays identical);
+    # a different failure must not.
+    $wallA = "Acceptance command failed (exit 1): ``node scripts\start-server.js``  (exit 1, 2.3s)`nError: listen EADDRINUSE: address already in use :::8080 at 2026-09-16T12:01:05.123+00:00 commit a1b2c3d4e5f"
+    $wallB = "Acceptance command failed (exit 1): ``node scripts\start-server.js``  (exit 1, 41.9s)`nError: listen EADDRINUSE: address already in use :::8080 at 2026-09-16T13:47:59.001+00:00 commit ffeeddccbba"
     $other = "Acceptance command failed (exit 1): ``powershell -NoProfile -File scripts\test-x.ps1``  (exit 1, 2.3s)`nFAIL expected 3 got 4"
     Test-Result "Get-FailureSignature: same failure, different commit/time/duration -> same signature" ((Get-FailureSignature @($wallA)) -eq (Get-FailureSignature @($wallB)))
     Test-Result "Get-FailureSignature: a different failure -> a different signature" ((Get-FailureSignature @($wallA)) -ne (Get-FailureSignature @($other)))
@@ -214,7 +214,7 @@ try {
     $b = Get-HandoffBlock $blockedHandoff
     Test-Result "Get-HandoffBlock: parses a ## Blocked section (reason + detail)" ($b -and $b.Reason -eq "environment" -and $b.Detail -like "Port 8080*bind.")
     $b2 = Get-HandoffBlock "## Known limitations`n- SCOPE-BLOCKED: docs/architecture/save-system.md -- deferred to task 5`n## Next action`nnone"
-    Test-Result "Get-HandoffBlock: a SCOPE-BLOCKED note under Known limitations is bookkeeping, not a block (the #257 false stall)" ($null -eq $b2)
+    Test-Result "Get-HandoffBlock: a SCOPE-BLOCKED note under Known limitations is bookkeeping, not a block" ($null -eq $b2)
     $b3 = Get-HandoffBlock "## Blocked`nreason: out-of-scope`nscripts/run-agent.ps1 -- the finding needs the runner`n`n## Known limitations`n- left untouched (out of scope): docs/x.md -- another task owns it`n## Next action`nnone"
     Test-Result "Get-HandoffBlock: a real out-of-scope block is still read when written as the section" ($b3 -and $b3.Reason -eq "out-of-scope" -and $b3.Detail -like "scripts/run-agent.ps1*")
     Test-Result "Get-HandoffBlock: null for a handoff without a block" ($null -eq (Get-HandoffBlock "## Branch`nx`n## Known limitations`nnone`n## Next action`nnone"))
@@ -640,12 +640,12 @@ try {
 }
 
 # ----------------------------------------------------------------------------- Test-QueueLabelsStale
-# The pure staleness check that throttles the three dashboard-only label queries (see issue #74):
+# The pure staleness check that throttles the three dashboard-only label queries:
 # stale (needs a refetch) when never fetched before, when 5 or more cycles have passed since the
 # last fetch, or when 10 or more minutes have passed since the last fetch -- whichever threshold
 # is reached first, exactly as documented above the function in agent-supervisor.ps1. $Now is a
 # fixed timestamp passed by the caller (never Get-Date read inside the function under test), so
-# identical arguments always produce the identical result the reviewer required.
+# identical arguments always produce identical results.
 try {
     $fixedNow = [datetime]"2026-01-01T00:00:00"
     Test-Result "Test-QueueLabelsStale: never fetched before (LastFetchedAt = `$null) is stale" (
@@ -675,12 +675,12 @@ try {
 }
 
 # ----------------------------------------------------------------------------- required-check verification
-# Guards against the failure mode a prior review round found: a section that throws partway
-# through (e.g. an unwritable temp directory) is now caught above and reported as a FAIL for
-# that section, but it may still have produced zero PASS/FAIL lines for one or more of the
-# helpers it was meant to exercise. Cross-check the required helper names against what
-# actually printed a result, and fail loudly for anything missing instead of letting a
-# partially-skipped run reach a successful summary.
+# Guards against a silent partial run: a section that throws partway through (e.g. an
+# unwritable temp directory) is caught above and reported as a FAIL for that section, but it
+# may still have produced zero PASS/FAIL lines for one or more of the helpers it was meant to
+# exercise. Cross-check the required helper names against what actually printed a result, and
+# fail loudly for anything missing instead of letting a partially-skipped run reach a
+# successful summary.
 $requiredPrefixes = @("Get-Field", "Get-TaskRole", "Get-AgentCommonSection", "Get-IssueRefs", "Extract-Json", "Load-State", "Save-State", "Fill-Template", "Other-Provider", "Read-Handoff", "Get-QuotaBlock", "Get-OwnedPaths", "Get-TaskReasoning", "Limit-Text", "Get-RecentSessions", "Get-CodexTokensFromLog", "Test-QueueLabelsStale")
 foreach ($prefix in $requiredPrefixes) {
     $found = $script:executedNames | Where-Object { $_.StartsWith($prefix) } | Select-Object -First 1
@@ -804,7 +804,7 @@ if ($DryRun) {
 }
 
 # ----------------------------------------------------------------------------- acceptance wrapper: nested -Command really runs once unwrapped
-# The exact line that failed #72 six times, run through the same wrapper shape as
+# A nested-command acceptance line of the kind planners write, run through the same wrapper shape as
 # Invoke-AcceptanceCommands (-EncodedCommand of `& { <line> }`): as written it can only fail;
 # unwrapped, the parser check it was meant to be really executes and passes on this very file.
 try {

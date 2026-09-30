@@ -1,5 +1,8 @@
 # Agent credentials and unattended operation
 
+> **In short:** how to sign in the AI tools and GitHub on the machine that runs the pipeline,
+> and how to keep that machine safe when it runs on its own.
+
 This repository does not store provider credentials. The supervisor only reads credentials
 already available to the process environment or to the provider CLI's own local login store.
 Read "Security model" in the README before running it unattended.
@@ -53,7 +56,7 @@ The dashboard reads Claude Code's local OAuth credentials only to call its usage
 token is never written, logged or returned (see `docs/AGENT_SUPERVISOR.md`, "Plan and quota
 fields").
 
-## What "24/7" means here
+## What must stay online
 
 The repository contains the control plane, but provider subscriptions do not create an
 always-running process by themselves. A machine or VM must stay online:

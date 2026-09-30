@@ -1,9 +1,9 @@
 <#
 .SYNOPSIS
-Self-test for the live.json heartbeat added to Invoke-Agent in scripts/agent-supervisor.ps1.
+Self-test for the live.json heartbeat written by Invoke-Agent in scripts/agent-supervisor.ps1.
 
 .DESCRIPTION
-Exercises Invoke-Agent's sliced WaitForExit loop and the new Write-Live helper as black boxes,
+Exercises Invoke-Agent's sliced WaitForExit loop and the Write-Live helper as black boxes,
 without touching GitHub or launching any real provider CLI, and without dot-sourcing
 agent-supervisor.ps1 directly (its module-level code requires the GitHub CLI, checks a lock
 file, and enters an infinite poll loop). Instead, exactly like scripts/test-supervisor.ps1, each
@@ -121,8 +121,8 @@ exit 0
 '@ | Set-Content -Path $dummyWorkerPath -Encoding utf8
 
 # ----------------------------------------------------------------------------- direct Write-Live checks
-# Covers all four $Tag shapes named in the task (only two of which get exercised end-to-end via
-# Invoke-Agent below) without paying for a process launch.
+# Covers all four $Tag shapes (only two of which are exercised end-to-end via Invoke-Agent
+# below) without paying for a process launch.
 try {
     $liveStatePath = New-TempState
     $statePath = $liveStatePath
@@ -309,7 +309,7 @@ try {
     Test-Result "Invoke-Agent (long-lived child): returned without throwing" ($null -eq $err) "$err"
     Test-Result "Invoke-Agent (long-lived child): TimedOut=true, Ok=false" ($result -and $result.TimedOut -eq $true -and $result.Ok -eq $false)
     Test-Result "Invoke-Agent (long-lived child): worker.json cleaned up after the timeout kill" (-not (Test-Path (Join-Path $longStatePath "$tag.worker.json")))
-    # Same total budget as today's single WaitForExit call: the slicing must not shrink or
+    # Same total budget as a single unsliced WaitForExit call: the slicing must not shrink or
     # stretch the point at which a kill triggers, within a few seconds either way.
     Test-Result "Invoke-Agent (long-lived child): total elapsed time preserves the timeout budget (within a few seconds)" ($stopwatch.Elapsed.TotalSeconds -ge ($budgetSeconds - 3) -and $stopwatch.Elapsed.TotalSeconds -le ($budgetSeconds + 15)) "elapsed=$($stopwatch.Elapsed.TotalSeconds)s, budget=${budgetSeconds}s"
 } catch {

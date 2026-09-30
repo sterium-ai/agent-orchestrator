@@ -1,4 +1,7 @@
-# How to get things built without touching the code
+# Filing objectives
+
+> **In short:** a guide for the person who asks for work: write what you want in a GitHub
+> issue, label it `objective`, and follow the progress in the comments. No code required.
 
 You describe *what* you want. The agents decide *how*, build it, check each other's work,
 and merge it. You read the results in the same place you asked for them.
@@ -21,7 +24,7 @@ objectives written and last edited by people on that list are planned; anything 
 `objective-failed` with an explanation.
 
 Good objectives are one feature or one improvement. "Add CSV export" is good. "Build the whole
-product" is too big; the planner will try, but the tasks will be vague and the reviews harsh.
+product" is too big; the planner will try, but the tasks will be vague and the reviews long.
 File several objectives instead; they are processed in order, one task at a time.
 
 ## 2. Read the results

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Self-test for the last-visible-agent-action readers added to scripts/agent-supervisor.ps1
+Self-test for the last-visible-agent-action readers in scripts/agent-supervisor.ps1
 (Read-FileTail, Get-ClaudeLastAction, Get-CodexLastAction, Get-CopilotLastAction,
 Get-LastAgentAction and their small helpers).
 
@@ -210,7 +210,7 @@ function New-CodexHome([string]$Name) {
 
 # Every real Codex rollout JSONL opens with a "session_meta" line naming the cwd the session was
 # launched in (see Get-CodexSessionCwd in agent-supervisor.ps1); a fixture without one would never
-# be found by the new WorkDir-scoped lookup.
+# be found by the WorkDir-scoped lookup.
 function New-CodexSessionMetaLine([string]$Cwd, [string]$Timestamp) {
     return ([pscustomobject]@{
         timestamp = $Timestamp
@@ -377,8 +377,8 @@ try {
     $fileB = Join-Path $codexHome "sessions\2026\09\16\rollout-concurrent-b.jsonl"
     Set-Content -Path $fileA -Value @((New-CodexSessionMetaLine $workDirA "2026-09-16T11:03:00.000Z"), $lineA) -Encoding utf8
     Set-Content -Path $fileB -Value @((New-CodexSessionMetaLine $workDirB "2026-09-16T11:03:30.000Z"), $lineB) -Encoding utf8
-    # File B is the more recently written session on the host -- the old "just take the newest
-    # file" logic would report task B's action even when asked about task A.
+    # File B is the more recently written session on the host: a "just take the newest file"
+    # lookup would report task B's action even when asked about task A.
     (Get-Item $fileA).LastWriteTime = (Get-Date).AddMinutes(-5)
     (Get-Item $fileB).LastWriteTime = (Get-Date)
     $result = Get-CodexLastAction $workDirA $codexHome
@@ -402,7 +402,7 @@ try {
     Set-Content -Path $fileOld -Value @((New-CodexSessionMetaLine $workDirOld "2026-09-16T08:59:00.000Z"), $lineOld) -Encoding utf8
     (Get-Item $fileOld).LastWriteTime = (Get-Date).AddHours(-2)
     # 30 unrelated sessions, each written more recently than the one actually being asked about --
-    # more than the old "only look at the 25 newest files" cap this test exists to prove is gone.
+    # more than a "only look at the 25 newest files" cap would ever consider.
     for ($i = 0; $i -lt 30; $i++) {
         $unrelatedDir = "C:\fakework\codex-noise-$i"
         $lineNoise = [pscustomobject]@{
@@ -483,10 +483,10 @@ try {
 # ----------------------------------------------------------------------------- Copilot: stdout.txt is the live source and takes precedence over output.md
 try {
     $tag = "issue-10-implement"
-    # run-agent.ps1 now streams the Copilot CLI's output into "$tag.stdout.txt" as the process
-    # runs (this task's fix) and only writes "$tag.output.md" once it exits. A stale/finished
-    # output.md must never shadow a live stdout.txt, so this fixture makes the two disagree and
-    # asserts the reader reports the stdout.txt content.
+    # run-agent.ps1 streams the Copilot CLI's output into "$tag.stdout.txt" as the process runs
+    # and only writes "$tag.output.md" once it exits. A stale/finished output.md must never
+    # shadow a live stdout.txt, so this fixture makes the two disagree and asserts the reader
+    # reports the stdout.txt content.
     Set-Content -Path (Join-Path $statePath "$tag.output.md") -Value @('$ echo stale-output-md-content') -Encoding utf8
     Set-Content -Path (Join-Path $statePath "$tag.stdout.txt") -Value @('$ echo live-stdout-content') -Encoding utf8
     $result = Get-CopilotLastAction $tag

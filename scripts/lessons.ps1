@@ -430,9 +430,9 @@ function Limit-LessonText {
 }
 
 # A reviewer's `fix` is written about one pull request: it names files, issue numbers and the exact
-# lines to change. Pasted verbatim into a lesson (which is what happened until 2026-09-21) it reads
-# as a one-off review comment rather than a rule, and it eats the prompt budget every later session
-# pays for. This strips the parts that only meant something in that review and caps what is left.
+# lines to change. Pasted verbatim into a lesson it reads as a one-off review comment rather than a
+# rule, and it eats the prompt budget every later session pays for. This strips the parts that only
+# meant something in that review and caps what is left.
 function ConvertTo-LessonText {
     param([string]$Text, [int]$Max = 200)
     $t = ([string]$Text).Trim()
@@ -448,12 +448,12 @@ function ConvertTo-LessonText {
     return (Limit-LessonText -Text $t -Max $Max)
 }
 
-# MaxEntryChars is the fix for the 2026-09-21 finding: a single verbose lesson (L-008's rule was
-# 1014 characters of pasted investigation) pushed the rendered section past MaxChars on its own,
-# the drop loop below then evicted every unpinned entry, and L-010, L-011 and L-012 never reached
-# a single agent prompt. Trimming the entry keeps every lesson visible for a fraction of the cost
-# of dropping it; the full text stays in lessons.md for a person to read. MaxChars is the outer
-# stop for a file that has genuinely grown too long, not the thing one bad entry trips.
+# MaxEntryChars caps each entry: without it, a single verbose lesson (a rule of about 1,000
+# characters of pasted investigation) pushes the rendered section past MaxChars on its own, the
+# drop loop below then evicts every unpinned entry, and newer lessons never reach an agent
+# prompt. Trimming the entry keeps every lesson visible for a fraction of the cost of dropping
+# it; the full text stays in lessons.md for a person to read. MaxChars is the outer stop for a
+# file that has genuinely grown too long, not the thing one bad entry trips.
 function Build-LessonsSection {
     param(
         [Parameter(Mandatory = $true)] $Lessons,

@@ -1,5 +1,8 @@
 # Agent workflow
 
+> **In short:** the working rules every agent (and any person who steps in) follows: who owns
+> what, how a change is described before it is written, and what must pass before it merges.
+
 This document defines the collaboration contract the pipeline assumes between the agents (and
 any human) working on a target repository. The supervisor automates most of it; the rules still
 apply when a person steps in.

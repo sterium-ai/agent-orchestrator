@@ -4,8 +4,8 @@ Contract test for the owner dashboard: runs a real ``agent-supervisor.ps1 -DryRu
 cycle and asserts the shape and safety of the ``dashboard.json`` it writes.
 
 .DESCRIPTION
-Write-Dashboard no longer skips itself in -DryRun mode (see docs/AGENT_SUPERVISOR.md and issue
-#67), so a single -DryRun -Once invocation is now enough to observe its real output without
+Write-Dashboard also runs in -DryRun mode (see docs/AGENT_SUPERVISOR.md, "Owner dashboard"),
+so a single -DryRun -Once invocation is enough to observe its real output without
 touching GitHub state or the working repo. This script launches exactly that invocation with
 its working directory redirected to a throwaway %TEMP% root (the same isolation trick
 scripts/test-supervisor.ps1 uses for its own -DryRun smoke check: agent-supervisor.ps1 resolves

@@ -273,8 +273,8 @@ try {
         -Detail "(missing rule text for: $(($missingRules | ForEach-Object { $_.id }) -join ', '))"
 
     # The real file, rendered: every entry present and the whole section inside its budget. This
-    # is the regression the MaxEntryChars fix is for -- one 1014-character entry once pushed the
-    # section over MaxChars and evicted three other lessons from every agent prompt.
+    # is the regression MaxEntryChars guards against: one very long entry pushing the section over
+    # MaxChars and evicting other lessons from every agent prompt.
     $realSection = Build-LessonsSection -Lessons (Read-Lessons -Path $lessonsPath)
     $realLines = @([regex]::Matches($realSection, '(?m)^- \*\*L-\d+\*\*.*$'))
     $tooLong = @($realLines | Where-Object { $_.Value.Length -gt 420 })

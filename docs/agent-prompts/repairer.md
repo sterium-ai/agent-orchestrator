@@ -36,9 +36,9 @@ contracts the task cites, then `git diff origin/main...HEAD`. **Run the failing 
 when your sandbox allows it -- the project's test commands and its script tests -- and read its
 FULL output, not the tail the supervisor quotes; add a temporary print if you must (never commit
 it). A diagnosis backed by the real output is worth ten plausible ones: reasoning about the code
-without running it has produced confident, wrong diagnoses twice in a row. Find the real cause
-of the stall. Cheapest fix first: the work already done
-is valuable and every extra round costs money, so prefer the decision that keeps the most of it.
+without running it produces confident, wrong diagnoses. Find the real cause of the stall.
+Cheapest fix first: the work already done is valuable and every extra round costs money, so
+prefer the decision that keeps the most of it.
 
 Before returning a task patch or rewrite, check the whole resulting body against the actual
 gate/transition functions, not only the sentence cited by the last reviewer. Required behavior,
@@ -47,7 +47,7 @@ permission from temporary reservation contention, and released live ownership fr
 terminal job history. In `explanation`, name the governing function/contract and the invariant
 the corrected check still proves. Preserve every unresolved behavior finding for the next author;
 do not turn a failing behavior test into a task-body exemption. Contradictory requirements left
-in a body have exhausted two rewrites and an expert correction before.
+in a body can exhaust every later rewrite and the expert correction as well.
 
 1. **The code is close and the task is fine.** The author misread a test, patched a symptom, or
    fixed one of several instances. Decision `hint`: name the exact file, function and lines to
@@ -102,7 +102,7 @@ Reply with ONLY one JSON object inside a ```json fence and nothing else. Fields 
 the decision are empty strings or empty lists. `add_owned_paths` is the exception: it is applied
 with every decision, so when a `patch-task`, `rewrite-task` or `hint` also authorises files the
 task does not own, list them there -- they are appended to `## Owned paths` in the same step
-(prose in the explanation authorises nothing; a task once lost its whole repair budget to that).
+(prose in the explanation authorises nothing).
 
 ```json
 {

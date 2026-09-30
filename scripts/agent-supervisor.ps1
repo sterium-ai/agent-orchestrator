@@ -427,8 +427,8 @@ function Get-EffectiveReviewer([object]$Issue) {
 # before a revision worker is launched and cleared once its result is pushed). That step needs
 # the author -- and only the author: a revision is edits to that provider's own branch, never
 # handed to another one -- so a reviewer with quota is not enough to enter Invoke-Review. Without
-# this gate the loop re-entered the review of task #35 seconds after its author's quota pause,
-# re-ran the pre-review checks against the unchanged commit and failed the task (2026-09-15).
+# this gate the loop would re-enter a review seconds after the author's quota pause, re-run the
+# pre-review checks against the unchanged commit and fail a task that was never attempted.
 function Test-ReviewRunnable([object]$Issue) {
     $ok = $true
     $st = Load-State ([int]$Issue.number) ([ref]$ok)
@@ -495,11 +495,11 @@ function Register-QuotaBlock([object]$Issue, [string]$Provider, [object]$Run, [s
 
 
 # ----------------------------------------------------------------------------- failure identity
-# The pre-review gate used to ask "is the branch at the same commit as when these checks last
-# failed?". That is the wrong question: task #71 (2026-09-16) failed the same two checks six
-# times in a row -- port 8080 already in use on the host, and a `$c` the task body's own command
-# expanded to nothing -- and every time the author committed something cosmetic, so the commit
-# changed, the gate saw "progress", and another author session was spent against the same wall.
+# Comparing commits ("is the branch at the same commit as when these checks last failed?") is
+# the wrong question: an author that commits something cosmetic each round moves the commit, so
+# the gate sees "progress" while the same wall stands, and another author session is spent
+# against it (one task failed the same two checks six times this way: a port already in use on
+# the host, and a `$c` the task body's own command expanded to nothing).
 # The right question is "is it the same FAILURE?", so the failures get an identity: their text,
 # lowercased, with the volatile parts (shas, durations, timestamps, GUIDs, temp names) blanked,
 # sorted and hashed. Two runs of the same wall hash alike even when the commit moved.
@@ -530,8 +530,8 @@ function Get-FailureSignature([string[]]$Failures) {
 # that does not parse, names a tool that is not there, or is one the supervisor refuses to
 # run). Sending these to the author buys nothing; they go to the owner with the class named.
 # Returns the class ("environment: ..." / "task-body: ...") or $null for an ordinary failure.
-# Several patterns also match the Spanish-localised Windows wording of the same OS messages, since
-# the host's display language decides the text PowerShell and Windows print.
+# Several patterns also match localised (Spanish) Windows wording of the same OS messages,
+# because the host's display language decides the text PowerShell and Windows print.
 function Get-FailureClass([string]$Failure) {
     $t = [string]$Failure
     if ([string]::IsNullOrWhiteSpace($t)) { return $null }
@@ -557,15 +557,13 @@ function Get-FailureClass([string]$Failure) {
 #   reason: environment | task-body | out-of-scope
 #   <one line: what is in the way>
 #
-# Only that section counts. The older one-line form `SCOPE-BLOCKED: <paths> -- <why>` used to be
-# read as out-of-scope too, and that produced false stalls: lesson L-003 told authors to write
-# that very line under `## Known limitations` for any out-of-scope file they deliberately left
-# alone, so a finished task whose acceptance commands all passed on the host was stopped for a
-# repair round anyway (#257 twice on 2026-09-19, the repairer itself reporting "the supervisor
-# misread that note as a stall signal"; #255/#256 likewise). A note about what was left untouched
-# is bookkeeping for the reviewer; "I cannot finish" is the `## Blocked` section and nothing else.
-# Codex was already writing this diagnosis in prose ("prior failures were port collision and
-# malformed PowerShell variable expansion", #71 round 2) and the loop had no way to hear it.
+# Only that section counts. An earlier one-line form (`SCOPE-BLOCKED: <paths> -- <why>`) was
+# also read as out-of-scope and produced false stalls: lesson L-003 told authors to write that
+# very line under `## Known limitations` for any out-of-scope file they deliberately left alone,
+# so finished tasks whose acceptance commands all passed on the host were stopped for a repair
+# round that changed nothing. A note about what was left untouched is bookkeeping for the
+# reviewer; "I cannot finish" is the `## Blocked` section and nothing else. The fixed shape is
+# what lets the loop act on a diagnosis an author would otherwise only write in prose.
 # Returns @{ Reason; Detail } or $null.
 function Get-HandoffBlock([string]$Handoff) {
     if ([string]::IsNullOrWhiteSpace($Handoff)) { return $null }
@@ -706,9 +704,9 @@ function Invoke-Repair([object]$Issue, [string]$Kind, [string]$Failure, [string]
     $d = $null
     if (-not $run.TimedOut -and -not $run.Unsafe) { $d = Extract-Json $run.Output }
     if ((-not $d -or -not $d.decision) -and -not $run.TimedOut -and -not $run.Unsafe) {
-        # A read-only session that produced no JSON is usually a truncated or chatty answer, not
-        # a verdict on the task (#304, 2026-09-24: one unparseable reply sent a content task to
-        # the owner with the budget untouched). One more try with the same prompt, same attempt.
+        # A read-only session that produced no JSON is usually a truncated or chatty answer, not a
+        # verdict on the task; without a retry, one unparseable reply sends the task to the owner with
+        # the repair budget untouched. One more try with the same prompt, same attempt.
         Write-Log "Issue #${n}: repair step returned no usable decision; retrying once"
         $run = Invoke-Agent -Provider $provider -Mode readonly -Prompt $prompt -WorkDir $workDir -Tag "issue-$n-repair-$attempt-retry" -TimeoutMinutes 25
         if ($run.QuotaBlocked) { Register-QuotaBlock $Issue $provider $run "repair"; return }
@@ -750,7 +748,7 @@ function Invoke-Repair([object]$Issue, [string]$Kind, [string]$Failure, [string]
                 $note = "Supervisor (repair step): the author cannot **$missing** -- $reason. $explain"
                 if ($recorded) { $note += "`n`nRecorded as a permanent rule for every future author$(if ($workaround) { ': ' + $workaround })." }
                 if ($hostAction) {
-                    $stopForHost = "The author cannot **$missing** ($reason) and nothing works around it from inside the sandbox. **What to do on the PC:** $hostAction`n`n$explain"
+                    $stopForHost = "The author cannot **$missing** ($reason) and nothing works around it from inside the sandbox. **What to do on the host:** $hostAction`n`n$explain"
                     Comment $n $note
                 } else {
                     $st.repairHint = $(if ($workaround) { "You cannot $missing ($reason). Do this instead: $workaround" } else { "You cannot $missing ($reason). Complete the task without it and state the limitation in the handoff." })
@@ -802,15 +800,14 @@ function Invoke-Repair([object]$Issue, [string]$Kind, [string]$Failure, [string]
             if ($hint) {
                 $st.repairHint = $hint
                 $applied = $true
-                Comment $n "Supervisor (repair step): the author was missing the point; the next revision gets explicit instructions. $explain"
+                Comment $n "Supervisor (repair step): the previous revision missed the requirement; the next revision gets explicit instructions. $explain"
             }
         }
     }
     # `add_owned_paths` is honoured with EVERY applied decision, not only `rescope`: the repair
-    # model lists every file it authorises there whatever its main decision (#303, 2026-09-23:
-    # a `patch-task` tightened two acceptance lines and named five files in add_owned_paths; only
-    # the patches were applied, the author stopped with `## Blocked` on exactly those five files,
-    # and the repair budget was gone). Files already covered by an owned entry are skipped.
+    # model lists every file it authorises there whatever its main decision. Applying only the
+    # patches of a `patch-task` leaves the author blocked on exactly the files the repair step
+    # named, with the repair budget already spent. Files already covered by an owned entry are skipped.
     if ($applied -and $decision -ne "rescope") {
         $extra = @($d.add_owned_paths | ForEach-Object { "$_".Trim() } | Where-Object { $_ -and -not (Test-PathUnderForbidden -Path $_ -Forbidden $script:OwnershipRules.protectedPaths) })
         if ($extra.Count -gt 0) {
@@ -832,11 +829,11 @@ function Invoke-Repair([object]$Issue, [string]$Kind, [string]$Failure, [string]
         }
     }
     # A rescope (owned paths widened) is cheap, safe and bounded by the file list, so it does not
-    # spend the repair budget: #133 (2026-09-18) used both repairs on rescopes and then had no
-    # budget left for the one rewrite the reviewer's task-body finding actually needed. Free is
-    # not unlimited, though: the first three rescopes of a task are free, from the fourth on a
-    # rescope costs a repair like any other decision, so a task that keeps discovering one more
-    # file it needs still reaches the repair ceiling instead of cycling forever.
+    # spend the repair budget; otherwise a task can use every repair on rescopes and have none left
+    # for the rewrite it actually needs. Free is not unlimited, though: the first three rescopes of
+    # a task are free, from the fourth on a rescope costs a repair like any other decision, so a
+    # task that keeps discovering one more file it needs still reaches the repair ceiling instead of
+    # cycling forever.
     if ($applied -and $decision -eq "rescope") { $st.rescopes = [int]$st.rescopes + 1 }
     $freeRescope = ($applied -and $decision -eq "rescope" -and [int]$st.rescopes -le 3)
     $st.repairs = if ($freeRescope) { [int]$st.repairs } else { $attempt }
@@ -851,10 +848,10 @@ function Invoke-Repair([object]$Issue, [string]$Kind, [string]$Failure, [string]
     # until the next revision strips it, and clearing the record would make it fire again.)
     $st.lastReviewedSha = $null; $st.lastVerdict = $null; $st.reviewFailures = 0
     # The revision count starts over only for a genuinely new attempt (a rewritten or patched
-    # task, a fixed environment, another author). A rescope or a hint continues the same
-    # attempt in the same worktree, so the revision ceiling keeps counting -- #241 (2026-09-19)
-    # had its count reset by four consecutive rescopes and ran nine revision rounds against a
-    # ceiling of six. Two rounds are always left so the widened scope or the hint gets a real try.
+    # task, a fixed environment, another author). A rescope or a hint continues the same attempt
+    # in the same worktree, so the revision ceiling keeps counting; otherwise consecutive rescopes
+    # could reset it indefinitely. Two rounds are always left so the widened scope or the hint gets
+    # a real try.
     if ($decision -in @("rescope", "hint")) { $st.revisions = [Math]::Max(0, [Math]::Min([int]$st.revisions, $MaxRevisions - 2)) }
     else { $st.revisions = 0 }
     $pr = $null
@@ -1247,8 +1244,8 @@ function Get-AcceptanceCommands([string]$Body) {
 # "run <text> in a fresh PowerShell" -- and every acceptance line already runs in a fresh
 # `powershell -NoProfile`, so the line is unwrapped and <text> is executed directly as code.
 # The check is then really executed, with its intended meaning, and no revision round is spent
-# on a defect of the task body. On 2026-09-16 #71 spent all six rounds and #72 two sessions on
-# one such line each, with the author "fixing" code that was never the problem.
+# on a defect of the task body. Left as written, one such line cost a task all six revision
+# rounds, with the author "fixing" code that was never the problem.
 function Resolve-AcceptanceCommand([string]$Command) {
     $result = [pscustomobject]@{ Command = $Command; Rewritten = $false; Original = $Command }
     if ([string]::IsNullOrWhiteSpace($Command)) { return $result }
@@ -2217,8 +2214,8 @@ function Update-DashboardIfStale {
     }
 }
 
-# A single small file the owner (and Claude, on their behalf) can read instead of piecing the
-# current state together from the log, the issues and the worktrees.
+# A single small file an operator can read instead of piecing the current state together
+# from the log, the issues and the worktrees.
 function Write-Status([hashtable]$Fields) {
     if ($DryRun) { return }
     $cool = @{}
@@ -2261,10 +2258,10 @@ function Invoke-GhJson([string[]]$A) {
 }
 
 # A failure must reach the owner's dashboard the moment it happens. The failed list is refetched
-# at most every 10 minutes and only between cycles, and a review cycle can run for hours: on
-# 2026-09-24 #303 failed at 01:08 while #360's review ran and the dashboard listed nothing for it
-# until the owner asked. Patch the cached queue (the issue leaves every other list, joins
-# `failed`), mark the label cache stale for the next cycle, and re-export now.
+# at most every 10 minutes and only between cycles, and a review cycle can run for hours, so a
+# task that fails during another task's long review would otherwise stay invisible until then.
+# Patch the cached queue (the issue leaves every other list, joins `failed`), mark the label
+# cache stale for the next cycle, and re-export now.
 function Register-FailureOnDashboard([object]$Issue) {
     if ($DryRun) { return }
     $n = [int]$Issue.number
@@ -2395,12 +2392,11 @@ function Find-ExistingTaskIssues([int]$ObjectiveNumber) {
     # The embedded quotes are passed as \" so that the one extra pair of quotes Windows
     # PowerShell 5.1 wraps around any array element containing whitespace still parses, under
     # CommandLineToArgvW, into the single argument `"Objective: #12" in:body`. The previous
-    # trick (doubling the quotes, `""Objective: #12"" in:body`) worked until the September
-    # 2026 Windows update of PowerShell 5.1 (5.1.26100.9444); after it gh received the phrase
-    # split in two, refused every search, and planning of every new objective was deferred
-    # forever -- with the supervisor retrying every five seconds and, because it was never
-    # idle, never self-updating either. Verified on that build: the \" form returns the
-    # expected issues for #15 and #30.
+    # trick (doubling the quotes, `""Objective: #12"" in:body`) stopped working with the September
+    # 2026 Windows update of PowerShell 5.1 (5.1.26100.9444): gh received the phrase split in two
+    # and refused every search, so planning of every new objective was deferred indefinitely (and,
+    # because the supervisor was never idle, it never self-updated either). The \" form is
+    # verified on that build.
     $searchPhrase = '\"Objective: #' + $ObjectiveNumber + '\" in:body'
     $r = Invoke-Gh @("issue", "list", "--repo", $Repository, "--state", "all",
         "--search", $searchPhrase, "--limit", "100",
@@ -2487,7 +2483,7 @@ function Extract-Json([string]$Text) {
         try { return ($candidate | ConvertFrom-Json) } catch { }
     }
     # Trailing commas before a closing bracket are the one malformation models produce that a
-    # strict parser rejects and a human would not notice (#304's repair reply, 2026-09-24).
+    # strict parser rejects and a human would not notice.
     foreach ($candidate in $candidates) {
         $relaxed = [regex]::Replace($candidate, ',(\s*[}\]])', '$1')
         if ($relaxed -ne $candidate) { try { return ($relaxed | ConvertFrom-Json) } catch { } }
@@ -2781,10 +2777,10 @@ function ConvertTo-CopilotLineAction([string]$Line) {
     if ($Line -match '^(?:\$|>|Running:|Executing:)\s*(.+)$') {
         return @{ kind = "run"; summary = (Limit-Summary $Matches[1]) }
     }
-    # Anything else is free-form assistant prose. Issue #61's must-not-change rule allows only
-    # tool names, paths and short command lines to be extracted -- never prompt text or full
-    # model output -- so unlike the run-shaped line above, this never echoes the line itself,
-    # only a length-only placeholder that carries no content from it.
+    # Anything else is free-form assistant prose. The heartbeat's privacy rule allows only tool
+    # names, paths and short command lines to be extracted -- never prompt text or full model
+    # output -- so unlike the run-shaped line above, this never echoes the line itself, only a
+    # length-only placeholder that carries no content from it.
     return @{ kind = "message"; summary = "agent message ($($Line.Length) chars)" }
 }
 
@@ -3224,7 +3220,7 @@ function Invoke-Planning([object]$Objective) {
         return
     }
 
-    Comment $n "Supervisor: planning started with ``$PlannerProvider``. I will post the plan here and create one issue per task."
+    Comment $n "Supervisor: planning started with ``$PlannerProvider``. The plan will be posted here, with one issue per task."
 
     $planTree = Join-Path $worktreeRoot "planner"
     & git fetch origin main --quiet
@@ -3422,7 +3418,7 @@ function Validate-And-Push([object]$Issue, [string]$Worktree, [string]$Branch, [
         & git diff --cached --quiet 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) {
             Write-Log "Issue #$($Issue.number): agent left real uncommitted changes; committing them on its behalf"
-            & git commit -q -m "chore(agent): commit work left uncommitted by $Provider" 2>&1 | Out-Null
+            & git commit -q -m "chore(agent): commit changes left in the worktree by the $Provider session" 2>&1 | Out-Null
         }
         $ahead = [int](& git rev-list --count origin/main..HEAD)
         if ($ahead -eq 0) { return "the agent finished without producing any commits" }
@@ -3547,7 +3543,7 @@ function Invoke-Recovery([object]$Issue) {
             $parked = "abandoned/issue-$n-$((Get-Date).ToString('yyyyMMdd-HHmmss'))"
             Remove-Worktree $worktree
             & git branch -m $branch $parked 2>&1 | Out-Null
-            Comment $n "Supervisor: the work left by an interrupted run did not pass validation ($problem). It was kept on local branch ``$parked`` on the PC (not pushed) in case anything in it is worth reusing, and the task is being redone."
+            Comment $n "Supervisor: the work left by an interrupted run did not pass validation ($problem). It was kept on local branch ``$parked`` on the host (not pushed) in case anything in it is worth reusing, and the task is being redone."
         }
     }
 
@@ -3710,10 +3706,10 @@ function Publish-Implementation([object]$Issue, [string]$Worktree, [string]$Bran
         # Find-PR returns the real PR in that case; otherwise pr create genuinely failed.
         $existingPr = Find-PR $Branch
         if (-not $existingPr) {
-            # A network or GitHub-side hiccup is not a failure of the work: the branch is pushed
-            # and the worktree still holds it. Left in progress, the next cycle's Invoke-Recovery
-            # sees a worktree ahead of origin/main and publishes it (#94, 2026-09-17: a TCP
-            # connect timeout to api.github.com failed a finished task).
+            # A network or GitHub-side hiccup (a TCP connect timeout to api.github.com, say) is not a
+            # failure of the work: the branch is pushed and the worktree still holds it. Left in
+            # progress, the next cycle's Invoke-Recovery sees a worktree ahead of origin/main and
+            # publishes it.
             if ($pr.Text -match '(?i)dial tcp|connectex|i/o timeout|timed? ?out|TLS handshake|unexpected EOF|no such host|temporarily unavailable|rate limit|API rate|connection reset|HTTP (500|502|503|504)|Bad Gateway|Service Unavailable|Gateway Time') {
                 Write-Log "Issue #${n}: pr create failed on a transient GitHub/network error ($(($pr.Text.Trim() -replace '\s+', ' '))); leaving the task in progress so the next cycle's recovery publishes the pushed branch"
                 return $false
@@ -3994,8 +3990,8 @@ $($st.conflictDetail)
         # deterministic: widen ## Owned paths with the existing, uncovered files the author named
         # and send it straight back, spending neither a repair session nor the repair budget
         # (the first three rescopes of a task are free, same rule as the repair step's own).
-        # #303 (2026-09-23) went to the owner twice with a full repair budget spent on exactly
-        # this shape: "needs <file>, not owned".
+        # Routed through the repair step instead, a "needs <file>, not owned" report can consume
+        # the whole repair budget.
         if ("$($block.Reason)" -in @("out-of-scope", "task-body") -and [int]$st.rescopes -lt 3) {
             try {
                 $ownedNow = @(Get-OwnedPaths ([string]$Issue.body))
@@ -4029,8 +4025,7 @@ $($st.conflictDetail)
         $verdictBy = "automatic pre-review checks"
         # Failures the author cannot change go to the owner at once, classified, and cost no
         # author session: the host's port, the host's permissions, a task-body command that does
-        # not parse. #71 spent six author sessions on "port 8080 in use" and "`$c` expands to
-        # nothing" before anyone read the text.
+        # not parse. Sent to the author instead, one such failure consumed six author sessions.
         $unfixable = @()
         foreach ($f in $mech) { $c = Get-FailureClass $f; if ($c) { $unfixable += "**$c**`n`n$f" } }
         if ($unfixable.Count -gt 0) {
@@ -4050,14 +4045,13 @@ $($st.conflictDetail)
         # (Get-FailureSignature: the check output with shas, times and durations blanked), the
         # author either cannot fix it or did not understand it; another revision session would
         # spend the author's allowance to arrive at the same place, whether or not it commits
-        # something along the way (#71: six cosmetic commits against one unchanged wall). The
-        # same-commit rule is kept as the trivial case of the same thing.
+        # something cosmetic along the way. The same-commit rule is kept as the trivial case of
+        # the same thing.
         # ...but only when a revision session actually ran since that record was written. A
         # revision cut short by the author's quota (see the QuotaBlocked branch below) never
-        # touched the branch, so an unchanged result after it says nothing about the author.
-        # Task #35, 2026-09-15 05:53: quota pause announced until 09:40, and 22 seconds later
-        # this rule failed the task on the very same commit; the whole implementation was then
-        # redone from scratch at 14:35.
+        # touched the branch, so an unchanged result after it says nothing about the author;
+        # without this exception a task paused on quota is failed seconds later on the very same
+        # commit and its implementation redone from scratch.
         $signature = Get-FailureSignature $mech
         $sameCommit = ($st.lastAutoFailureSha -and $currentHead -and "$($st.lastAutoFailureSha)" -eq $currentHead)
         $sameFailure = ($st.lastAutoFailureSignature -and $signature -and "$($st.lastAutoFailureSignature)" -eq $signature)
@@ -4065,7 +4059,6 @@ $($st.conflictDetail)
             # The record that just fired is cleared before escalating: an owner who relabels
             # agent-review after this is buying exactly one more author round on purpose, and
             # without this the still-stored signature would fire again on the first check.
-            # (#92, 2026-09-17: stopped correctly, then un-relaunchable.)
             $st.lastAutoFailureSha = $null; $st.lastAutoFailureSignature = $null
             Save-State $n $st | Out-Null
             $how = if ($sameCommit) { "the author's revision committed nothing, so repeating it would not change the result" } else { "the author's revision moved the branch to ``$currentHead`` but the checks fail in exactly the same way, so it did not address the cause" }
@@ -4097,10 +4090,9 @@ $($st.conflictDetail)
 
         $st.lastAutoFailureSha = $null
         $st.lastAutoFailureSignature = $null
-        # (A `## Blocked` / SCOPE-BLOCKED handoff was already acted on above, before the
-        # mechanical verdict; #70 (2026-09-16) spent four rounds and then died on "committed
-        # nothing" because run-agent.ps1 was outside its owned paths, which is why that stop
-        # exists at all.)
+        # (A `## Blocked` handoff was already acted on above, before the mechanical verdict: an
+        # author blocked on a file outside its owned paths would otherwise spend its rounds
+        # committing nothing.)
         $handoff = Limit-Text $handoffRaw $ReviewerHandoffChars "handoff"
         $acceptanceSection = if ($acceptanceReport) { $acceptanceReport } else { "(This task lists no ``## Acceptance commands`` block, so nothing was executed. Judge command-style checks from the handoff and the diff; do not fail the change solely because a command's output is not quoted.)" }
 
@@ -4160,9 +4152,9 @@ $($st.conflictDetail)
             # No verdict is a property of the reviewer, not of the task: a quota or outage message
             # the parser does not know, an empty reply, a crash. Twice in a row pauses THAT
             # provider for an hour (another reviewer steps in, or the task waits) instead of
-            # failing the task -- #206/#207/#208 (2026-09-19) were all failed on an unrecognised
-            # Copilot "exceeded your monthly quota" reply. The reply's tail is logged so the
-            # wording can be added to Get-QuotaBlock.
+            # failing the task (an unrecognised Copilot "exceeded your monthly quota" reply would
+            # otherwise fail every task it reviews). The reply's tail is logged so the wording can
+            # be added to Get-QuotaBlock.
             $tail = ((([string]$run.Output) -replace '\s+', ' ').Trim())
             if ($tail.Length -gt 240) { $tail = $tail.Substring(0, 240) + "..." }
             $st.reviewFailures = [int]$st.reviewFailures + 1; Save-State $n $st
@@ -4171,7 +4163,7 @@ $($st.conflictDetail)
                 $st.reviewFailures = 0; Save-State $n $st
                 Set-ProviderCooldown $reviewer (Get-Date).AddMinutes(60) "returned no verdict twice in a row (last reply: $tail)"
                 Write-Log "Issue #${n}: pausing ``$reviewer`` for 60 minutes after two verdict-less replies; the task stays in review for another reviewer or until then"
-                Comment $n "Supervisor: ``$reviewer`` replied twice without a verdict (last reply: $tail). That is the reviewer's problem, not this task's: ``$reviewer`` is paused for an hour and the review is retried with whichever reviewer is available. No round was consumed."
+                Comment $n "Supervisor: ``$reviewer`` replied twice without a verdict (last reply: $tail). This is a reviewer problem, not a task failure: ``$reviewer`` is paused for an hour and the review is retried with whichever reviewer is available. No round was consumed."
             }
             return
         }
@@ -4306,26 +4298,23 @@ $($st.conflictDetail)
 
     # request_changes
     #
-    # One rule, and it is a plain count of rounds.
-    #
-    # This spot has now had three different stopping rules in two days. A fixed ceiling failed a
-    # documentation task one edit from done. Counting blocking findings called steady progress
-    # "stuck". Comparing finding identity was smarter and crashed the whole review cycle on a null
-    # from the first round, discarding a review that had already been paid for. Each cleverness
-    # cost more than the problem it solved. A round ceiling is dumb, predictable, and cannot throw:
-    # work that is genuinely converging finishes inside it, and work that is not stops without
-    # anybody having to define "converging". Leave it alone.
-    # Tasks that edit the orchestration itself get half the ceiling: no agent can run the
-    # supervisor, its reviews cost a full re-read of a multi-thousand-line file every round, and
-    # the longest review loops in this pipeline's history were all of that kind.
+    # One stopping rule, and it is a plain count of rounds. Cleverer rules were tried and
+    # removed: a fixed ceiling on blocking findings called steady progress "stuck", and
+    # comparing finding identity threw on a null from the first round, discarding a review
+    # that had already been paid for. A round ceiling is simple, predictable and cannot
+    # throw: work that is genuinely converging finishes inside it, and work that is not stops
+    # without anybody having to define "converging".
+    # Tasks that edit the orchestration itself get a lower ceiling (at most 3): no agent can
+    # run the supervisor, their reviews re-read a multi-thousand-line file every round, and
+    # the longest review loops observed were all of that kind.
     $ceiling = $MaxRevisions
     try { if (@(Get-OwnedPaths ([string]$Issue.body) | Where-Object { $_ -match 'agent-supervisor\.ps1|run-agent\.ps1' }).Count -gt 0) { $ceiling = [Math]::Min($MaxRevisions, 3) } } catch { }
     if ($round -gt $ceiling) { Invoke-Repair $Issue "the revision ceiling was reached" "The reviewer still requested changes after $ceiling revision rounds$(if ($ceiling -lt $MaxRevisions) { ' (the ceiling is lower for tasks that edit the supervisor scripts)' }). Last review: $($verdict.summary)`n`n$reviewText" $worktree $branch; return }
     # The reviewer's own "this criterion is wrong": a blocking finding whose fix starts with
     # `task-body:` says the task text asks for something the accepted contract forbids or that
-    # cannot be built as written (#91: an "active job with a non-terminal route search", which
-    # one of the project's decision records ruled out by construction -- three revision rounds were spent disputing it). The
-    # author cannot edit the issue, so it goes to the owner at once, with no revision spent.
+    # cannot be built as written (for example a runtime state a decision record rules out by
+    # construction, which otherwise costs revision rounds spent disputing it). The author
+    # cannot edit the issue, so it goes to the repair step at once, with no revision spent.
     try {
         if ($verdictBy -ne "automatic pre-review checks") {
             $taskBody = @($verdict.findings | Where-Object { "$($_.severity)" -eq "blocking" -and ("$($_.fix)" -match '^\s*task-body:' -or "$($_.issue)" -match '^\s*task-body:') })
@@ -4335,8 +4324,7 @@ $($st.conflictDetail)
                 # paths: X") is a rescope, and a rescope is deterministic: when EVERY task-body
                 # finding names an existing, uncovered file, widen ## Owned paths and send the
                 # whole review to the author as a revision -- no repair session, no budget. A
-                # finding that disputes the wording itself still goes to the repair step. #360
-                # (2026-09-24) went to the owner with the budget spent on two such findings.
+                # finding that disputes the wording itself still goes to the repair step.
                 $ownershipOnly = $false
                 $namedByReviewer = @()
                 try {
@@ -4378,16 +4366,16 @@ $($st.conflictDetail)
             }
         }
     } catch { Write-Log "Issue #${n}: could not check for task-body findings ($($_.Exception.Message)); continuing" }
-    # One more rule, deliberately as dumb as the ceiling above and unable to throw (it is wrapped):
-    # if an unresolved finding persists alongside any newly discovered defects,
-    # twice in a row, the author is patching around the requirement rather than meeting it
-    # (#35 and #70 each spent three rounds on one restated finding). Stop and say which finding.
+    # One more rule, deliberately as simple as the ceiling above and unable to throw (it is
+    # wrapped): if an unresolved finding persists alongside any newly discovered defects, twice
+    # in a row, the author is patching around the requirement rather than meeting it. Stop and
+    # say which finding.
     # Only provider verdicts count; the automatic pre-review gate has its own signature rule.
     try {
         if ($verdictBy -ne "automatic pre-review checks") {
             $currentBlocking = @($verdict.findings | Where-Object { "$($_.severity)" -eq "blocking" } | ForEach-Object { ("$($_.file) $($_.issue)").Trim() } | Where-Object { $_ -ne "" })
             # ($null | ForEach-Object) yields one empty string, and Test-RuleSimilarity refuses an
-            # empty argument -- which is how this rule silently never fired on #91 rounds 2-4.
+            # empty argument, which would silently disable this rule.
             $st.findingStreaks = @(Get-FindingStreaks $currentBlocking @($st.findingStreaks))
             $st.restatedRounds = 0
             foreach ($finding in $st.findingStreaks) { $st.restatedRounds = [Math]::Max($st.restatedRounds, [int]$finding.repeats) }
@@ -4579,9 +4567,8 @@ try {
             if (Test-ProviderUsable $PlannerProvider) { $objectives = $allObjectives }
             # A review or task counts as runnable when SOME provider can take it now: the assigned
             # one, or -- for reviews immediately, for authors after -SwapAfterMinutes -- another
-            # independent one (see Get-EffectiveReviewer / Get-EffectiveAuthor). Before copilot was
-            # added, the author filter only looked at the assigned provider, so the hand-over in
-            # Invoke-Implementation could never actually be reached from here.
+            # independent one (see Get-EffectiveReviewer / Get-EffectiveAuthor). Filtering on the
+            # assigned provider alone would make the hand-over in Invoke-Implementation unreachable.
             $reviews = @($allReviews | Where-Object { Test-ReviewRunnable $_ })
             $ready = @($allReady | Where-Object { $null -ne (Get-EffectiveAuthor $_) })
             $waiting = ($allObjectives.Count - $objectives.Count) + ($allReviews.Count - $reviews.Count) + ($allReady.Count - $ready.Count)

@@ -44,9 +44,9 @@ param(
     # Conflict-resolution session: the author must merge origin/main into its branch. Grants
     # `git merge`, `git ls-files`, `git cat-file` and `git checkout --ours/--theirs` on top of the
     # edit tools -- local commands only; origin/main is already fetched by the supervisor in this
-    # worktree, so no network is needed. Without this, #137 (2026-09-18) looped four times:
-    # the author "hand-reconstructed" the merge as a single-parent commit, the reviewer then saw
-    # all of main's files as out-of-scope changes, and the rebase failed again on the next round.
+    # worktree, so no network is needed. Without these tools an author cannot make a real merge: it
+    # reconstructs one by hand as a single-parent commit, the reviewer then sees all of main's files
+    # as out-of-scope changes, and the rebase fails again on the next round.
     [switch]$ConflictSession,
     # Explicitly owner-authorized exceptional writer session; ordinary roles keep their policy.
     [switch]$ExpertSession,
@@ -88,10 +88,10 @@ function Resolve-Provider([string]$Name) {
 # observed from both CLIs:
 #   claude: "You've hit your session limit * resets 5:30pm (<local time zone>)"
 #   codex : "ERROR: You've hit your usage limit. ... or try again at 7:51 PM."
-# Copilot CLI (free plan) observed 2026-09-19: "You have exceeded your monthly quota (Request
-# ID: ...)" -- no reset time in the text; the allowance resets on the 1st of the next month.
-# Before that wording was known, three tasks (#206-#208) were FAILED as "the reviewer failed
-# twice to produce a verdict" instead of pausing the provider.
+# Copilot CLI (free plan): "You have exceeded your monthly quota (Request ID: ...)" -- no reset
+# time in the text; the allowance resets on the 1st of the next month. An unrecognised quota
+# message is indistinguishable from "the reviewer failed twice to produce a verdict" and would
+# fail the task instead of pausing the provider.
 function Get-QuotaBlock([string]$Text) {
     if ([string]::IsNullOrWhiteSpace($Text)) { return $null }
     $patterns = @(
@@ -114,12 +114,12 @@ function Get-QuotaBlock([string]$Text) {
     # containing the word "limit": the codex log echoes the whole prompt back, and a task whose
     # own text mentions a limit would otherwise be quoted in full into a GitHub comment.
     #
-    # The reset time is parsed from THAT SAME LINE, never from the text as a whole. Issue #13's
-    # body quotes both providers' limit messages as test fixtures ("resets 5:30pm", "try again at
-    # 7:51 PM"); with the prompt echoed into the codex log, a whole-text search found the fixture
-    # first and paused codex until 17:30 the next day three times, while codex's real message said
-    # the allowance was back within minutes. Callers should also strip the echoed prompt before
-    # calling this (see below), but the per-line rule holds on its own.
+    # The reset time is parsed from THAT SAME LINE, never from the text as a whole. A task body
+    # that quotes both providers' limit messages as test fixtures ("resets 5:30pm", "try again at
+    # 7:51 PM") is echoed into the codex log with the prompt; a whole-text search then finds the
+    # fixture first and pauses codex until the next afternoon, while codex's real message says the
+    # allowance is back within minutes. Callers should also strip the echoed prompt before calling
+    # this (see below), but the per-line rule holds on its own.
     $line = ""
     foreach ($candidate in ($Text -split "`n")) {
         foreach ($p in $patterns) {
@@ -236,8 +236,8 @@ try {
         # MCP server is disabled so the agent cannot reach outside the worktree through the API,
         # matching the other providers. Tool permissions mirror claude's allowlists. Copilot
         # writes real token/premium-request usage to a JSON file; the supervisor reads it for the
-        # dashboard. Verified on the host 2026-09-15 (denied write exits 0 with no file; allowed
-        # write + git commit works; model "auto" rejects --reasoning-effort).
+        # dashboard. Verified against the CLI: a denied write exits 0 with no file; an allowed write
+        # plus git commit works; model "auto" rejects --reasoning-effort.
         $usageFile = "$OutputFile.usage.json"
         Remove-Item $usageFile -Force -ErrorAction SilentlyContinue
         $cpArgs = @("-s", "--no-auto-update", "--no-ask-user", "--disable-builtin-mcps", "-C", $WorkDir, "--usage-output-file", $usageFile)

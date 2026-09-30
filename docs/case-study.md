@@ -1,6 +1,11 @@
 # Case study: a Godot colony simulation built by the pipeline
 
-The orchestrator was developed while it built **Deepholm, a deterministic colony simulation in
+> **In short:** over 13 days the pipeline turned plain-language requests into 124 reviewed and
+> merged changes to a real game, largely unattended. This page reports what worked, what did
+> not, and how every figure was measured.
+
+The orchestrator was developed while it built
+**[Deepholm](https://github.com/sterium-ai/deepholm), a deterministic colony simulation in
 Godot 4**. The owner filed objectives as GitHub issues; the supervisor planned them, had Claude
 Code, Codex or GitHub Copilot CLI implement each task in its own worktree, ran the project's
 checks on the host, had a different provider review the result, and squash-merged the approved
@@ -47,10 +52,10 @@ core files is explained in writing next to the code it allowed.
 
 **The pipeline recovered its own dropped work.** When an agent's sandbox refused `git commit`,
 or a session ended with changes still in the working tree, the supervisor committed them on the
-author's behalf before validating and pushing (`chore(agent): commit work left uncommitted by
-<provider>`). That recovery commit appears in 32 merges for Codex and 29 for Claude Code. In 19
-pull requests it was the only commit: Codex had done the work but committed none of it, and
-without the recovery those tasks would have been judged empty and rerun.
+author's behalf before validating and pushing (a separate "recovery commit" whose message names
+the provider). Recovery commits appear in 32 merges for Codex and 29 for Claude Code. In 19
+pull requests the recovery commit was the only commit: Codex had done the work but committed
+none of it, and without the recovery those tasks would have been judged empty and rerun.
 
 ## Where the pipeline struggled
 
@@ -83,15 +88,17 @@ configured for expert recovery. The reliable record of who authored and who revi
 the supervisor's own issue comments and pull-request text, not git metadata; the template
 `AGENTS.md` shipped here no longer asks for a trailer.
 
-**Most of the orchestrator's complexity is scar tissue.** Many rules in
-`docs/AGENT_SUPERVISOR.md` cite a specific task that lost rounds to the problem they fix: a
+**Most of the orchestrator's rules come from observed failures.** Many rules in
+`docs/AGENT_SUPERVISOR.md` describe a task that lost rounds to the problem they fix: a
 failure signature that ignores cosmetic commits, the free rescope for a `## Blocked` report, the
 refusal to review a commit already rejected. Each rule is small; together they are the difference
 between a demo and a queue that runs unattended for nearly two weeks.
 
 ## How the figures were measured
 
-All commands are read-only and were run in a clone of the game repository.
+All commands are read-only and were run in a clone of the game repository. Recovery commits
+are identified by the fixed subject the supervisor gave them at the time,
+`chore(agent): commit work left uncommitted by <provider>`.
 
 ```bash
 # pipeline merges and their date range
@@ -114,6 +121,6 @@ for h in $(git log --format=%H); do git log -1 --format=%B $h | grep -q 'commit 
 for h in $(git log --format=%H); do git log -1 --format=%B $h | grep -qi '^co-authored-by: Claude Sonnet 5' && echo $h; done | wc -l
 ```
 
-The 124 pipeline merges are the squash commits titled `agent: <task title> (#n)` (105) plus those
-titled `chore(agent): commit work left uncommitted by codex (#n)` (19), the latter being pull
-requests whose only commit was the supervisor's recovery commit.
+The 124 pipeline merges are the squash commits titled `agent: <task title> (#n)` (105) plus the
+19 whose squash title is the recovery-commit subject, the latter being pull requests whose only
+commit was the supervisor's recovery commit.

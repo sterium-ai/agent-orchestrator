@@ -1,5 +1,7 @@
-<#!
-AST-only checks for supervisor live-status observation points.
+<#
+.SYNOPSIS
+AST-only checks that every supervisor step (planning, implementation, review, recovery,
+reconciliation, idle) writes its live-status heartbeat inside a try block.
 #>
 $ErrorActionPreference = "Stop"
 $script:failures = 0

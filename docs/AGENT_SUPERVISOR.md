@@ -1,4 +1,7 @@
-# Agent supervisor (orchestrator)
+# Supervisor reference
+
+> **In short:** the complete description of how the supervisor behaves: how it moves work
+> through its stages, what it checks, how it recovers from failures, and why each rule exists.
 
 ## What it is
 
@@ -12,8 +15,8 @@ The product owner only files `objective` issues; see `docs/HOW_TO_GIVE_OBJECTIVE
 Configuration (repository, test gate, trusted authors, models, ownership rules) is described in
 the README; this document explains the behaviour.
 
-Issue numbers and dates in this document refer to the production history of the project the
-pipeline was developed on (see `docs/case-study.md`); they explain why a rule exists.
+Where a rule exists because of a specific failure, the failure is described briefly; the
+incidents come from the project in [the case study](case-study.md).
 
 ## Pipeline
 
@@ -74,7 +77,7 @@ two files it operates on. The loop, run from inside `Invoke-Review`:
 `docs/agent-prompts/lessons.md` — two sections, `## Active` and `## Retired`, each holding
 `### L-<NNN> (<date>)` entries with fields `rule`, `do`, `source`, an optional `check` (a regex,
 backtick-quoted) with its `check-on` target, `hits`, `last-seen`, and an optional `pinned`. Read
-and written by `Read-Lessons`/`Write-Lessons`. The file ships with eight curated seed lessons;
+and written by `Read-Lessons`/`Write-Lessons`. The file ships with eight curated lessons (six seed rules and two capability rules);
 the supervisor reads the target repository's copy (`lessonsFile`, default
 `docs/agent-prompts/lessons.md`) and falls back to the seed until the first lesson is learned
 there.
@@ -99,15 +102,15 @@ there.
 - Reviewer: always a *different* provider from the author (`Reviewer:` line, defaulting to
   the author's partner), read-only: Claude with read/grep/glob and read-only git only; Codex
   with `--sandbox read-only`; Copilot with only read-only git allowed and `write` denied.
-- Third provider (added 2026-09-15): GitHub Copilot CLI (`copilot`, `npm install -g
+- Third provider: GitHub Copilot CLI (`copilot`, `npm install -g
   @github/copilot`, authenticated with the GitHub account). It is the stand-in seat, not a
   planner default: `Get-EffectiveReviewer` asks it to review whenever the assigned reviewer
   is out of quota (immediately, since a review is one read-only session), and
   `Get-EffectiveAuthor` hands it an implementation when the assigned author has been out for
   longer than `-SwapAfterMinutes` (the hand-over is written into the issue body and the
-  original author becomes the reviewer). Before this, one exhausted allowance stalled every
-  review for as long as that provider's reset took (codex: four days on 2026-09-15). A task
-  may also name `copilot` explicitly. `run-agent.ps1` drives it with the prompt on stdin,
+  original author becomes the reviewer). Without a third provider, one exhausted allowance
+  stalls every review until that provider resets, which can take days. A task may also name
+  `copilot` explicitly. `run-agent.ps1` drives it with the prompt on stdin,
   `-s` (reply only), `--no-ask-user` (a tool that is not pre-allowed is silently denied, never
   prompted for), `--disable-builtin-mcps` (no GitHub API from inside the sandbox), an
   allow-list mirroring Claude's, and `--usage-output-file` so real token and premium-request
@@ -115,7 +118,7 @@ there.
   picks the model; `auto` rejects a reasoning-effort setting, a named model gets the task's
   codex effort level. If `copilot` is not on PATH the supervisor logs it once and runs with
   two providers exactly as before.
-- Several logins per provider (added 2026-09-16, Codex only so far): a usage limit belongs to
+- Several logins per provider (Codex only): a usage limit belongs to
   a login, not to the vendor, so `providers.json` cooldowns are keyed per *account*. The
   primary login is the bare provider name (`codex`, the default `~/.codex`); every subfolder
   of `-CodexAccountsDir` (default `%USERPROFILE%\.codex-accounts`) that holds an `auth.json`
@@ -164,7 +167,7 @@ owned-paths discipline, commit style, the `## Blocked` handoff shape, and the ma
    writes metadata files) and whatever it produces is committed. Tests are **not** run here:
    the test gate runs in `Get-MechanicalFailures` before every review, so a red test goes back
    to the author as a revision with the real output instead of failing the task with nothing
-   to resume from (#91 lost a 23-minute implementation that way).
+   to resume from.
 
 Whitespace errors and protected paths are reported before review, as a revision (see
 "Mechanical checks" below).
@@ -175,8 +178,7 @@ rebuilt and the implementation redone).
 
 ## Self-repair: when a task stops, the pipeline decides before a person does
 
-`agent-failed` used to be the answer to every stall. Now every stall that is not a host or
-safety problem goes through `Invoke-Repair` first (prompt: `docs/agent-prompts/repairer.md`):
+Every stall that is not a host or safety problem goes through `Invoke-Repair` first (prompt: `docs/agent-prompts/repairer.md`):
 the planner provider reads the failure, the task, the objective, the author's handoff, the
 last review and the executed acceptance transcript, read-only in the task's worktree, and
 returns one decision:
@@ -206,9 +208,9 @@ returns one decision:
 ### Let the agents run the tests
 
 Authors, reviewers and the repair step are allowed to run the project's own test tools
-(`agents.shellCommands`); the supervisor's host run stays the authoritative result. #92 once
-spent five revisions and two repair diagnoses reasoning about a red test nobody was allowed to
-run; the real cause was visible in the first line of its output. If a tool writes outside the
+(`agents.shellCommands`); the supervisor's host run stays the authoritative result. Without
+this, one task spent five revisions and two repair diagnoses reasoning about a red test nobody
+was allowed to run; the real cause was visible in the first line of its output. If a tool writes outside the
 worktree (a user-data folder, a cache), list that folder in `agents.sandboxWritableDirectories`
 so Codex's sandbox does not deny it and fail the test for the wrong reason.
 
@@ -232,15 +234,14 @@ confirmed, a corrupted state file, a reviewer that twice returns no verdict, a p
 merge that GitHub refuses. Those are the cases where guessing could lose work.
 
 A `## Blocked` report with reason `out-of-scope` or `task-body` that names the files it needs
-is handled without the repair step at all (2026-09-24): `Get-PathsNamedInBlockedReport`
+is handled without the repair step at all: `Get-PathsNamedInBlockedReport`
 (`scripts/lib/task-preflight.ps1`) extracts the repo-relative paths from the report, keeps those
 that exist in the worktree and are not already covered by an owned entry (never a protected
 path from `ownership.protectedPaths` or the supervisor's own scripts), `## Owned paths` is widened
 with `(auto: named in the author's ## Blocked report)` markers, and the author is sent straight
 back with a pending revision that quotes its own report. It counts as one of the task's three
 free rescopes and spends neither a repair session nor a review round; when no usable path is
-named, or the free rescopes are used up, the repair step runs as before. #303 went to the owner
-twice with the repair budget spent on exactly this shape.
+named, or the free rescopes are used up, the repair step runs as usual.
 
 The same rescope applies to a reviewer's `task-body:` findings when every such finding only
 names files the task does not own ("needs file outside owned paths: X"): the files are added
@@ -249,23 +250,41 @@ a revision, without the repair step. A finding that also disputes an ADR or a co
 judgement call and still goes to the repair step (a reviewer must not override an accepted
 design by naming a file). A repair session that returns no parseable decision is retried once
 in the same attempt before the task is handed to a person; `Extract-Json` also tolerates
-trailing commas (#304's reply was rejected for one).
+trailing commas, a common model slip that a strict JSON parser rejects.
 
-A free rescope never grants a path the task's own text forbids: every path named in a `Do not modify / change / edit / touch ...` sentence (`Get-ForbiddenPathsFromBody`). A `## Blocked` report or reviewer finding that names such a path is a scope decision and goes to the repair step (which may hand it to a person) instead of widening the task. A whole top-level folder (`src/`, `tests/`) is never granted either; a deeper subfolder still is. Background: #304, a task whose Non-goals forbade core changes, was widened onto two core files by two free rescopes, patched the core scheduler, and was then rejected for it.
+A free rescope never grants a path the task's own text forbids: every path named in a
+`Do not modify / change / edit / touch ...` sentence (`Get-ForbiddenPathsFromBody`). A
+`## Blocked` report or reviewer finding that names such a path is a scope decision and goes to
+the repair step (which may hand it to a person) instead of widening the task. A whole top-level
+folder (`src/`, `tests/`) is never granted either; a deeper subfolder still is. Without this
+rule, a task whose non-goals forbade core changes was widened onto two core files by two free
+rescopes, patched the core scheduler, and was then rejected for it.
 
-Before the supervisor commits work an author left uncommitted (`Validate-And-Push`), it restores every generated file the task does not own -- paths matching `ownership.generatedFiles` that changed against the branch's merge base with `origin/main` and existed there -- back to that base and commits the restore on its own (`Restore-UnownedGeneratedFiles`, filter `Select-UnownedGeneratedPaths` in `scripts/lib/owned-paths-auto.ps1`). In the case-study project an engine's import step, run by a required acceptance command, rewrote a resource file's internal ids non-deterministically; the sweep used to commit that churn and the reviewer then blocked the diff for an unowned file no author could revert (the corresponding lesson was hit 22 times). New generated files are left alone. The issue gets one comment naming the restored files. A capability lesson (`Add-CapabilityLesson`) is recorded only when it is a general, author-side rule: a workaround of "none" or a narrative that names commits or runs past 400 characters is logged and dropped instead of becoming a pinned rule.
+Before the supervisor commits work an author left uncommitted (`Validate-And-Push`), it
+restores every generated file the task does not own -- paths matching
+`ownership.generatedFiles` that changed against the branch's merge base with `origin/main` and
+existed there -- back to that base and commits the restore on its own
+(`Restore-UnownedGeneratedFiles`, filter `Select-UnownedGeneratedPaths` in
+`scripts/lib/owned-paths-auto.ps1`). In the case-study project an engine's import step, run by
+a required acceptance command, rewrote a resource file's internal ids non-deterministically;
+committing that churn made the reviewer block the diff for an unowned file no author could
+revert (the corresponding lesson was hit 22 times). New generated files are left alone. The
+issue gets one comment naming the restored files.
+
+A capability lesson (`Add-CapabilityLesson`) is recorded only when it is a general, author-side
+rule: a workaround of "none", or a narrative that names commits or runs past 400 characters, is
+logged and dropped instead of becoming a pinned rule.
 
 A task that fails (`Report-Failure`) is put on the owner's dashboard immediately
 (`Register-FailureOnDashboard`): the cached queue is patched and re-exported, and the label
 cache is marked stale, instead of waiting for the next throttled refetch -- which, during a
-review cycle that runs for hours, could be hours away (#303 failed at 01:08 on 2026-09-24 and the
-dashboard listed nothing for it).
+review cycle that runs for hours, could be hours away.
 
 `add_owned_paths` in a repair decision is applied whatever the main decision (`patch-task`,
 `rewrite-task`, `hint` as well as `rescope`): the repair model lists every file it authorises
-there, and until 2026-09-23 only `rescope` read it -- #303's repair patched two acceptance lines,
-named five files, only the patches landed, the author stopped with `## Blocked` on those five
-files and the repair budget was gone. Files already covered by an owned entry are skipped; the
+there. If only `rescope` read the list, a `patch-task` that also named five files would land
+only its patches, the author would stop with `## Blocked` on exactly those files, and the
+repair budget would be gone. Files already covered by an owned entry are skipped; the
 added bullets carry `(auto: authorised by the repair step with its <decision>)`.
 
 ## Task-body findings from the reviewer
@@ -295,7 +314,7 @@ reset the budget. See ADR 002 (`docs/decisions/002-workflow-reliability.md`) for
 
 ### Bounded expert correction
 
-With `-ExpertRecoveryEnabled $true` (default, owner-authorized), a finding repeated across
+With `-ExpertRecoveryEnabled $true` (the default), a finding repeated across
 three reviews, the revision ceiling, or exhaustion of the repair budget queues one expert
 correction on the existing task worktree. A preflight failure without a worktree never starts
 an expert in the supervisor checkout. This is driven by failed progress, not elapsed time or
@@ -346,14 +365,14 @@ stop) never loses track of a task: it just leaves it labelled `agent-in-progress
 restart happened after `Invoke-Implementation` set that label but before the later move to
 `agent-review`.
 
-Three rules added 2026-09-16 after an external audit of the workflow:
+Three rules keep interrupted work from being lost or repeated:
 
 - **Salvage before cleanup.** If the interrupted worktree holds work (commits ahead of
   `origin/main`, or edits the agent never committed), recovery runs it through the normal
   `Validate-And-Push` gate and, if it passes, publishes it to review (`Publish-Implementation`,
   the same tail a normal run uses) instead of deleting it and paying for a second
   implementation. This also covers a transient `gh` failure right after the agent finished,
-  which used to defer "to the next cycle" and then get the finished worktree discarded. Work
+  which would otherwise defer "to the next cycle" and then discard the finished worktree. Work
   that fails the gate is parked on a local branch `abandoned/issue-<n>-<timestamp>` (never
   pushed) before the task is redone.
 - **Deadlines survive restarts.** `Invoke-Agent` records each worker's deadline in its
@@ -364,8 +383,8 @@ Three rules added 2026-09-16 after an external audit of the workflow:
   of a revision, the issue state keeps `awaitingRevisionBy = <author>` and the main loop
   gates that issue on the *author* being usable, not on a reviewer; and the "pre-review checks
   failed again at the same commit" rule is suppressed for a revision that never ran
-  (`revisionInterruptedByQuota`). Task #35 was failed 22 seconds after its pause on
-  2026-09-15 and reimplemented from scratch because of exactly this.
+  (`revisionInterruptedByQuota`). Without this, a task paused on quota was failed seconds
+  later and reimplemented from scratch.
 
 At the start of every poll cycle, before objectives, reviews or ready tasks, the supervisor
 queries issues labelled `agent-in-progress`. The **supervisor process** side of this is
@@ -396,8 +415,8 @@ Readers (`Get-LiveWorkerForIssue`, and `Invoke-Recovery`'s own check) treat `pid
 result (as opposed to `Confirmed = $true` for a positively-identified live process), and every
 caller — `Invoke-Recovery`'s own check, and the two `Get-LiveWorkerForIssue` call sites in
 `Invoke-Implementation` and `Invoke-Review` — marks the issue `agent-failed` for manual
-attention on `Confirmed = $false` rather than either reclaiming the worktree or (the bug fixed
-here) silently skipping the same unconfirmed record forever with no path to resolution. Once a
+attention on `Confirmed = $false` rather than either reclaiming the worktree or silently
+skipping the same unconfirmed record forever with no path to resolution. Once a
 real pid is on file, recovery confirms liveness by matching both `pid` and `startTime` against
 the live process table (so a recycled PID from an unrelated process is not mistaken for the
 worker), and if it is still alive, force-kills its process tree (`taskkill /T /F`) and
@@ -423,7 +442,7 @@ could not be durably recorded never gets its worktree committed, pushed, or merg
 strength of an exit code alone.
 
 If the record file itself is simply missing at the top of `Invoke-Recovery` — not "confirmed
-dead", just absent — that can now only mean the supervisor crashed before `Invoke-Agent`'s own
+dead", just absent — that can only mean the supervisor crashed before `Invoke-Agent`'s own
 first write (e.g. mid worktree-creation, before the agent process was ever launched), since the
 write happens before `Start-Process`. Recovery still corroborates with the worktree's own
 activity in that case, as a second line of defense: it looks at the most recently modified file
@@ -461,14 +480,13 @@ the new commits. A revision can be interrupted at any point — while the worker
 right after it exits, or during the re-check/push that follows — and a naive retry would then
 launch a fresh review against the (updated) local worktree while the remote PR still holds the
 older, rejected code; an approval would merge that stale remote code instead of what was
-actually reviewed, and (before this was fixed) the pre-merge `headRefOid` mismatch check would
-simply defer forever, since nothing ever pushed the local commits.
+actually reviewed, or the pre-merge `headRefOid` mismatch check would simply defer forever,
+since nothing would ever push the local commits.
 
 To prevent this, the supervisor persists a `pendingPush` flag in the issue's local state
-**before the revision worker is even launched** — not after it returns. This matters: a crash
-while the revision agent is still writing to the worktree, or in the gap between it exiting and
-the flag previously being set, used to leave no trace that a push was owed. Now the flag is on
-disk for the entire lifetime of the revision, so every subsequent `Invoke-Review` call for that
+**before the revision worker is even launched** — not after it returns. This matters: otherwise a crash
+while the revision agent is still writing to the worktree, or right after it exits, would
+leave no trace that a push was owed. The flag is on disk for the entire lifetime of the revision, so every subsequent `Invoke-Review` call for that
 issue sees it. The check order inside `Invoke-Review` is deliberate: the live-worker check
 (`Get-LiveWorkerForIssue`, covering the `issue-<n>-revise-<round>` tag) always runs *before* the
 `pendingPush` check, so a revision worker that is still alive is never mistaken for "finished,
@@ -486,9 +504,9 @@ branch clears both transient flags and finding streaks but preserves `totalRevis
 
 ### Exclusive startup lock
 
-Two supervisors starting at the same instant used to be able to both pass a
-"does the lock file exist?" check before either wrote it, defeating the single-instance
-assumption the recovery logic above depends on. The lock is now an OS-level exclusive file
+With a check-then-write lock, two supervisors starting at the same instant could both pass
+a "does the lock file exist?" check before either wrote it, defeating the single-instance
+assumption the recovery logic above depends on. The lock is therefore an OS-level exclusive file
 handle (`FileStream` opened with `FileShare.None`) held for the process's entire lifetime: a
 second process's attempt to open the same file fails immediately, and a crashed process's
 handle is released by Windows when the process exits, so no separate staleness/PID check is
@@ -508,7 +526,7 @@ In the case-study project that once cost an hour right after a merge: an agent h
 was the only thing it could kill), and a task already pushed for its second review round simply
 waited.
 
-Three layers now keep that from recurring.
+Three layers prevent this.
 
 - The supervisor sweeps **leaked log-file holders** with the Windows Restart Manager
   (`Get-FileHolders` / `Stop-LeakedLogHolders`): it asks the OS exactly which processes hold its
@@ -592,9 +610,8 @@ attempt happens once, when it can actually succeed, instead of repeatedly agains
 message ever omits the time, the fallback is a single quiet 30-minute wait.
 
 Two rules keep that message honest. The codex log echoes the whole prompt back, and a task
-whose body quotes a limit message as a fixture (#13 does, for its own tests) once had its
-"resets 5:30pm" read as codex's reset time — three pauses of 14–16 hours for limits that
-actually lasted five. So `run-agent.ps1` drops every log line that also appears in the prompt
+whose body quotes a limit message as a test fixture once had its "resets 5:30pm" read as
+codex's reset time: three pauses of 14–16 hours for limits that actually lasted minutes. So `run-agent.ps1` drops every log line that also appears in the prompt
 before classifying, and `Get-QuotaBlock` parses the reset time only from the line that
 matched the limit pattern, never from the text as a whole. A stated time up to ten minutes in
 the past means "now" (codex reports resets to the minute; a launch at 23:43:13 was told
@@ -613,7 +630,7 @@ round is spent** -- these are facts a script settles, not opinions a reviewer ne
 
 Incomplete validation is a failure too: a missing checkout, failed base fetch/diff, a test
 command that cannot start, or an exception inside the gate must produce a blocking diagnostic.
-These cases used to be logged or skipped without returning a failure;
+None of them may be logged or skipped without returning a failure;
 `scripts/tests/test-pre-review-gates.ps1` exercises the real gate functions with controlled
 command failures. Host/tool/read failures use the existing environment-repair path rather than a
 paid author correction. A red test is an author correction; a test command that never finishes
@@ -635,7 +652,7 @@ policy; an unreadable file cannot silently bypass its budget.
    implies its fixtures folder and its schema file.
 3. **File budgets.** When an owned path is capped in `ownership.budgetsFile`, the budgets file
    and `ownership.decisionsDirectory` are added, because raising a cap needs a decision record in
-   the same change (#302 stopped with `## Blocked` on its first revision for exactly this).
+   the same change (otherwise the author stops with `## Blocked` on its first revision).
 
 Existing owned files and parent directories are recognized case-insensitively with slash
 normalization (`Test-PathCovered`). Exercised by `scripts/tests/test-owned-paths-auto.ps1`.
@@ -656,14 +673,14 @@ something to invent). Exercised by `scripts/tests/test-task-preflight.ps1`.
 
 ### Same failure twice, failures no author can fix, and the author's own "I cannot"
 
-Three rules added after the 2026-09-16 audit of tasks #13, #33, #35, #37, #70, #71 and #72,
-which between them spent well over twenty agent sessions against walls no session could move:
+Three rules stop the pipeline from spending sessions against walls no session can move (an
+audit of seven stalled tasks in the case-study project counted well over twenty such sessions):
 
 - **The gate compares failures, not commits.** `Get-FailureSignature` hashes the mechanical /
   acceptance failure text with shas, times, durations and temp names blanked. If a round fails
   with the same signature as the previous one, the task stops and is escalated even though the
-  author committed something in between (#71: six cosmetic commits against "port already in
-  use"). The older same-commit rule is kept as the trivial case. A revision cut short by quota
+  author committed something in between (one task made six cosmetic commits against "port
+  already in use"). The older same-commit rule is kept as the trivial case. A revision cut short by quota
   still does not count (`revisionInterruptedByQuota`).
 - **Failures the author cannot change go to the owner at once.** `Get-FailureClass` names a
   port already in use, access denied / locked files, a timed-out or unstartable command
@@ -678,10 +695,10 @@ which between them spent well over twenty agent sessions against walls no sessio
   the section counts: the older one-line `SCOPE-BLOCKED:` form is no longer read, because
   a lesson had authors writing it under `## Known limitations` as bookkeeping for files
   they deliberately left alone, and every such finished task was stopped for a repair round
-  that changed nothing (#255, #256, #257 on 2026-09-19). A deliberately untouched file is now
+  that changed nothing. A deliberately untouched file is now
   `left untouched (out of scope): <path> -- <why>` under `## Known limitations`.
 
-Two prompt changes go with them. The implementer's revision section now demands, per blocking
+Two prompt rules go with them. The implementer's revision section demands, per blocking
 finding, a `## Revision response` line `finding -> what changed -> why that resolves the
 requirement` (or `disputed: <reason>`) and says what does not count as a fix (a fallback where
 the behaviour was requested, a check at the symptom instead of the origin, a special case). The
@@ -695,21 +712,21 @@ whose only job is `git merge origin/main`. `run-agent.ps1 -ConflictSession` adds
 `git merge`, `git ls-files`, `git cat-file` and `git checkout --ours/--theirs` to that one
 session's tools (no `git fetch`: the supervisor fetched `origin/main` into the worktree
 just before its own rebase attempt, so the merge is local -- which also keeps Codex's and
-Copilot's no-network sandboxes working). Before this (2026-09-18, #137) the prompt asked for
-`git fetch` + `git merge` that the tool list forbade; the author "hand-reconstructed" the
-merge as a single-parent commit, the reviewer then saw every file `main` had changed as an
+Copilot's no-network sandboxes working). An earlier prompt asked for `git fetch` +
+`git merge`, which the tool list forbade; the author "hand-reconstructed" the merge as a
+single-parent commit, the reviewer then saw every file `main` had changed as an
 out-of-scope change, requested changes, the next approval hit the same rebase conflict, and
-the loop cost two author sessions and one review per turn with no exit. The lesson the
-auto-learn step recorded from that episode (L-007 in the shipped seed file) now says the
-opposite of what it first said.
+the loop cost two author sessions and one review per turn with no exit. The lesson recorded from that
+episode (L-007 in the shipped lessons file) tells authors to run a real `git merge` instead.
 
 ### The supervisor runs each task's acceptance commands on the host
 
 Agent sandboxes often cannot run the project's tests (a CLI's allow-list lacks the tool, a
 read-only sandbox denies the temp writes most tests need), so neither the author nor the
-reviewer can reliably observe a real test result. Before this existed, a reviewer would correctly refuse to
-approve unverified work, the author would correctly be unable to produce the evidence, and the
-task would circle until it hit `MaxRevisions` — #12 lost two rounds and #13 all seven to this.
+reviewer can reliably observe a real test result. Without host-side execution, a reviewer
+correctly refuses to approve unverified work, the author is correctly unable to produce the
+evidence, and the task circles until it hits `MaxRevisions` (one task lost all seven of its
+rounds this way).
 
 The supervisor itself is unrestricted PowerShell on the host, so it does the running -- which
 is also why these commands are the most sensitive input the pipeline has (see "Trusted authors"
@@ -717,7 +734,7 @@ below and "Security model" in the README):
 
 - The planner emits `acceptance_commands` per task; the supervisor writes them into the task
   issue under a `## Acceptance commands` heading as a fenced ```` ```powershell ```` block.
-  Editing that block in the issue body is how the owner or Claude adds or corrects commands
+  Editing that block in the issue body is how the owner adds or corrects commands
   for an existing task; only the fenced block counts, never comments.
 - `Get-AcceptanceCommands` extracts the block; `Invoke-AcceptanceCommands` runs each line in
   a fresh `powershell.exe -NoProfile` in the worktree, with a timeout per command
@@ -732,15 +749,15 @@ below and "Security model" in the README):
 - Results are written to `.agent-state/issue-<n>.acceptance.md` and inserted into the
   reviewer prompt (`{{ACCEPTANCE}}`) as authoritative. Any failure is appended to the
   mechanical-failure list, so the change goes back to the author with the real output and
-  **no review round is spent**. A pass reaches the reviewer, whose instructions now say the
+  **no review round is spent**. A pass reaches the reviewer, whose instructions say the
   transcript settles "was it run", and their job on those checks is only "does the command
   actually test the criterion".
 - The revision prompt carries the last transcript too, so the author is never asked for
   proof it cannot produce.
 
 Two task-body defects are recognised before anything runs, because they cannot be fixed by
-the author and used to cost whole tasks (2026-09-16: #71 lost six rounds, #72 two sessions,
-#70 four rounds):
+the author and otherwise cost whole tasks (in the case-study project, between two sessions
+and six rounds each):
 
 - **A check written as `powershell -NoProfile -Command "<text>"`.** Written that way it only
   works from `cmd.exe`: as a PowerShell line the double-quoted string expands every `$name`
@@ -753,7 +770,7 @@ the author and used to cost whole tasks (2026-09-16: #71 lost six rounds, #72 tw
   nested line that cannot be unwrapped (arguments after the closing quote, a quote that does
   not close) and still contains `$` is reported as `NOT RUN (task-body defect)`, counted as
   passed so no revision is spent on it, with the reviewer told to judge that check from the
-  diff. `scripts/test-supervisor.ps1` proves both halves with the exact line that failed #72:
+  diff. `scripts/test-supervisor.ps1` proves both halves with a real line of this shape:
   as written it fails, unwrapped it passes, and unwrapped it still fails on a file that does
   not parse.
 - **A change that needs a file outside `## Owned paths`.** The implementer prompt tells the
@@ -798,10 +815,10 @@ opened by outsiders.
 
 ### Follow-up review rounds are incremental
 
-Each review round is a fresh reviewer session, and every round used to start from nothing:
-the full diff, `AGENTS.md`, large parts of this script, re-read to judge a twenty-line fix.
-Codex reports a stable 35–50K tokens per round whatever the diff, so the allowance went on
-repeated discovery, not on any one round. Now the supervisor remembers the commit each verdict
+Each review round is a fresh reviewer session. Starting every round from nothing means
+re-reading the full diff, `AGENTS.md` and large parts of the supervisor script to judge a
+twenty-line fix; Codex reports a stable 35–50K tokens per round whatever the diff, so the
+allowance goes on repeated discovery, not on any one round. Instead, the supervisor remembers the commit each verdict
 was given for (`lastReviewedSha` in `issue-<n>.json`) and, from round 2 on, fills the
 reviewer prompt's `{{PREVIOUS_ROUND}}` section with the previous verdict and
 `git diff <lastReviewedSha> HEAD` (capped at `-IncrementalDiffChars`, default 12,000): verify
@@ -825,15 +842,14 @@ of facts under 40 lines for the same reason.
 
 ### Reasoning effort follows the task
 
-`run-agent.ps1` always accepted `-CodexReasoning`; the supervisor now sets it per task.
-`Get-TaskReasoning` reads the task's `## Owned paths`: if every path is a document
+The supervisor sets `run-agent.ps1 -CodexReasoning` per task. `Get-TaskReasoning` reads the task's `## Owned paths`: if every path is a document
 (`.md`, `.txt`, `.yaml`, `.json`, or a directory under `docs/`), codex runs at
 `-DocsReasoning` (default `low`) for that task's implementation,
 reviews and revisions; anything touching code stays at `medium`. `-DocsReasoning medium`
-switches the experiment off. Claude has no such knob and is unaffected.
+turns this off. Claude has no such knob and is unaffected.
 
-A rebuilt branch (`agent-ready`) is a new attempt: `Invoke-Implementation` now resets the
-round counters and the remembered commit in `issue-<n>.json`, which owners used to do by hand.
+A rebuilt branch (`agent-ready`) is a new attempt: `Invoke-Implementation` resets the round
+counters and the remembered commit in `issue-<n>.json`.
 
 ### Known limitation: the crash window around a worker launch
 
@@ -878,9 +894,9 @@ separate sessions. Cache entries must match provider and completion time, and ov
 legacy Codex/Copilot artifacts cannot supply older sessions' usage: unknown counts stay null.
 Delete the cache to rebuild from surviving evidence; deleted artifacts cannot be recovered.
 Codex totals come from its transcript token-count records when
-available, with the text `tokens used` regex as the t2 fallback. The dashboard-only blocked,
-failed and planned label queries are throttled by t3 and their last successful fetch time is
-recorded as `queueFetchedAt`. `dashboard.json.meta.exportMs` is the integer export duration in
+available, with the text `tokens used` regex as the fallback. The dashboard-only blocked,
+failed and planned label queries are throttled (`Test-QueueLabelsStale`) and their last
+successful fetch time is recorded as `queueFetchedAt`. `dashboard.json.meta.exportMs` is the integer export duration in
 milliseconds, and `dashboard.json.meta.githubCalls` is the integer number of `gh` invocations
 in that cycle. The footer displays these as the export duration in seconds and the GitHub call
 count, alongside the 30-second refresh and usage-page links.
@@ -919,12 +935,10 @@ and, if the reader has not returned by then, abandons that runspace, logs a one-
 and moves on with the last cached (or empty) result. A stalled network call or a stuck `gh`
 process is therefore never able to block the polling loop, not merely logged after the fact.
 
-The dashboard previously showed a made-up "last 4 h" session/token window as a stand-in for
-"the current usage window." That has been replaced by each provider's own official windows
-(Codex and Claude both report a 5 h and a 7-day window; Copilot's quota categories reset
-monthly), read from the sources above rather than approximated from the supervisor's own log.
-Two of the three CLIs (Codex and Claude) now expose their real remaining quota this way; the
-page shows those figures directly instead of only linking out to a usage page.
+The quota bars show each provider's own official windows (Codex and Claude both report a 5 h
+and a 7-day window; Copilot's quota categories reset monthly), read from the sources above
+rather than approximated from the supervisor's own log. For Codex and Claude the page shows
+the real remaining quota directly instead of only linking out to a usage page.
 
 ### Live status
 
@@ -937,10 +951,10 @@ action for the current role, and `waiting` for the other roles. The page treats
 `Date.now() - updatedAt > 90000` as stale when `step` is not `idle` and shows a warning; a
 missing or stale entry falls back to the dashboard's next action for the headline.
 
-## Reviewed pitfalls and current behaviour
+## Known pitfalls and how they are handled
 
-This section records, for every pitfall named in issue #12's objective, what the supervisor
-actually does today (not what earlier drafts of this document claimed).
+Each entry names a classic failure mode of an unattended orchestrator and what the supervisor
+does about it.
 
 - **Concurrent supervisors / races.** Prevented by the exclusive startup lock (above); within
   one process the poll loop is single-threaded, so there is no concurrent mutation of the same
@@ -953,13 +967,13 @@ actually does today (not what earlier drafts of this document claimed).
   isn't fully covered (`pid <= 0`, or the worktree was touched too recently to trust a quiet
   worktree) marks the task `agent-failed` or defers rather than reclaiming/launching a second
   writer on a guess. Approving stale code because a revision's push hadn't landed yet is closed
-  by the `pendingPush` flag (now persisted before the revision worker launches, not after) plus
+  by the `pendingPush` flag (persisted before the revision worker launches, not after) plus
   the pre-merge `headRefOid` comparison (see "Merge" and "Recovering a revision that finished but
   was not confirmed pushed" above). A worker ownership record that fails to write at all is
   treated as fatal for that run (`Unsafe`), blocking validation/push/merge instead of trusting an
   exit code from a process nothing can positively identify anymore.
 - **GitHub/CLI unreachable mid-task.** `Invoke-Gh`/`Invoke-GhJson` surface a non-zero `Code`.
-  `Find-ExistingTaskIssues` now distinguishes a failed search from a genuinely-empty one and
+  `Find-ExistingTaskIssues` distinguishes a failed search from a genuinely-empty one and
   the two callers (`Invoke-Planning`'s duplicate check, `Check-ObjectiveDone`'s fallback) defer
   rather than proceeding as if nothing was found. `Unblock-Dependants` and
   `Check-ObjectiveDone` likewise require every prerequisite/child read to succeed before
@@ -1000,9 +1014,11 @@ actually does today (not what earlier drafts of this document claimed).
 - **Native-argument quoting.** Most external calls use PowerShell's array-splat (`& cmd @args`),
   which quotes each element correctly *unless an element itself already contains a literal
   double quote* — Windows PowerShell 5.1 then wraps the whole element in one more pair of
-  quotes without escaping the ones already inside it, corrupting the argument. This is exactly
-  what happened in `Find-ExistingTaskIssues`'s `--search` phrase (`"Objective: #12" in:body`):
-  doubling every embedded quote before the array-splat wrap now survives it intact.
+  quotes without escaping the ones already inside it, corrupting the argument.
+  `Find-ExistingTaskIssues` builds such a phrase (`"Objective: #12" in:body`, with the
+  objective's number) and escapes its embedded quotes as `\"`, which survives the wrap intact
+  (the older doubled-quote form stopped working with the September 2026 update of Windows
+  PowerShell 5.1).
   `Invoke-Agent`'s `$argList` for `Start-Process -ArgumentList` (a single joined command line,
   not an array-splat) wraps path-bearing values in literal quotes for the same underlying
   reason and has no embedded quotes to double.
@@ -1025,7 +1041,7 @@ to the target repository's `.gitignore`).
 ## Self-test
 
 `scripts/test-supervisor.ps1` is a self-contained check of the pure helper functions in
-`scripts/agent-supervisor.ps1` (`Get-Field`, `Get-IssueRefs`, `Extract-Json`, `Load-State`,
+`scripts/agent-supervisor.ps1` (among others `Get-Field`, `Get-IssueRefs`, `Extract-Json`, `Load-State`,
 `Save-State`, `Fill-Template`, `Other-Provider`, `Read-Handoff`) and
 `scripts/run-agent.ps1` (`Get-QuotaBlock`). It touches neither GitHub nor any agent CLI, and
 does not dot-source either script directly: dot-sourcing `agent-supervisor.ps1` would run the

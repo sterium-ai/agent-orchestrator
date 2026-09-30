@@ -175,7 +175,7 @@ try {
     $supervisorRaw = [IO.File]::ReadAllText($supervisorPath)
     $vapAt = $supervisorRaw.IndexOf('function Validate-And-Push(')
     $restoreCallAt = $supervisorRaw.IndexOf('Restore-UnownedGeneratedFiles -Worktree $Worktree', $vapAt)
-    $sweepAt = $supervisorRaw.IndexOf('commit work left uncommitted by $Provider', $vapAt)
+    $sweepAt = $supervisorRaw.IndexOf('commit changes left in the worktree by the $Provider session', $vapAt)
     Test-Result "Validate-And-Push restores unowned generated files before the uncommitted-work sweep" ($vapAt -ge 0 -and $restoreCallAt -gt $vapAt -and $sweepAt -gt $restoreCallAt)
     Test-Result "Restore-UnownedGeneratedFiles restores to the merge base, not to origin/main's tip" ($supervisorRaw.IndexOf('git merge-base origin/main HEAD') -ge 0 -and $supervisorRaw.IndexOf('git checkout $base -- $p') -ge 0)
 
