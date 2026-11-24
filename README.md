@@ -27,6 +27,14 @@ across five roles** (planner, implementer, reviewer, repair step, expert recover
 It was built while delivering a real project; see
 [the case study](docs/case-study.md) (124 pipeline-merged pull requests in 13 days).
 
+**The harness, as a whole.** This supervisor is the first of two control planes built on the
+same rules. The second runs up to three tasks in parallel from [Orca](https://orca.dev)
+worktrees, with a person reachable for design decisions. [docs/harness/](docs/harness/README.md)
+describes the unified architecture in seven layers, states which parts are implemented where,
+and records what was adopted from the NVIDIA, Anthropic and OpenAI harness designs;
+[docs/harness/SETUP.md](docs/harness/SETUP.md) walks through setting it up on your own project,
+with starter templates.
+
 ## Contents
 
 [How it works](#how-it-works) · [Key features](#key-features) · [Quick start](#quick-start) ·
@@ -394,6 +402,8 @@ walls. The pieces are complementary: any of those agents could, in principle, si
 The full index, grouped for newcomers, operators and reviewers, is in
 [docs/README.md](docs/README.md). The most useful entry points:
 
+- [docs/harness/README.md](docs/harness/README.md): the reference architecture (both control planes, seven layers, sources).
+- [docs/harness/SETUP.md](docs/harness/SETUP.md): set the harness up on your own project, step by step.
 - [docs/HOW_TO_GIVE_OBJECTIVES.md](docs/HOW_TO_GIVE_OBJECTIVES.md): how to ask for work (no code required).
 - [docs/AGENT_SUPERVISOR.md](docs/AGENT_SUPERVISOR.md): the complete behaviour reference.
 - [docs/decisions/](docs/decisions/README.md): architecture decision records.
@@ -414,6 +424,7 @@ docs/README.md                        documentation index
 docs/agent-prompts/                   planner, implementer, reviewer, repairer and expert prompts; shared rules; shipped lessons
 docs/dashboard/index.html             the owner dashboard page
 docs/decisions/                       decision records about the orchestrator
+docs/harness/                         reference architecture, setup guide and starter templates
 docs/examples/                        template AGENTS.md for a target repository
 agent-orchestrator.example.json       configuration template
 ```

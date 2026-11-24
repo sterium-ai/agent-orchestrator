@@ -10,6 +10,12 @@
 - [AGENT_CREDENTIALS.md](AGENT_CREDENTIALS.md): signing in the provider CLIs and GitHub, and preparing an isolated host.
 - [examples/target-project-AGENTS.md](examples/target-project-AGENTS.md): template rule book for the repository the pipeline works on.
 
+## The harness
+
+- [harness/README.md](harness/README.md): the reference architecture that unifies the unattended supervisor and the supervised parallel workflow: principles, seven layers, roles, lifecycle, measurements and what was adopted from other published harnesses.
+- [harness/SETUP.md](harness/SETUP.md): step-by-step setup on your own project, operating rules and troubleshooting.
+- [harness/templates/](harness/templates/): starter `AGENTS.md`, backlog entry, review guide, handoff report and agent settings.
+
 ## Operating
 
 - [AGENT_SUPERVISOR.md](AGENT_SUPERVISOR.md): complete behaviour reference: stages, checks, repair, recovery, dashboard.
